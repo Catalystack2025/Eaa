@@ -10,13 +10,39 @@
    ========================================================= */
 
 require_once __DIR__ . '/lib/helpers.php';
+require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/config/db.php';
 
 start_session();
 
-// Mock behavior for UI demonstration
-$loginError = isset($_GET['error']) ? "Authorization failed: Invalid credentials provided." : "";
-$loginSuccess = isset($_GET['success']) ? "Terminal Access Granted. Redirecting..." : "";
+$loginError = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+
+    if ($email === '' || $password === '') {
+        $loginError = 'Authorization failed: Email and passcode are required.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $loginError = 'Authorization failed: Enter a valid email address.';
+    } else {
+        $user = find_user_by_email($email);
+
+        if (!$user || !password_verify($password, $user['password_hash'])) {
+            $loginError = 'Authorization failed: Invalid credentials provided.';
+        } else {
+            login_user($user);
+
+            if ($user['role'] === 'admin') {
+                header('Location: admin/dashboard.php');
+                exit;
+            }
+
+            header('Location: accountpage.php');
+            exit;
+        }
+    }
+}
 
 $pageTitle = 'Login Portal | EAA';
 require_once __DIR__ . "/partials/header.php";
@@ -257,24 +283,21 @@ require_once __DIR__ . "/partials/header.php";
 
             <!-- Status Messages -->
             <?php if ($loginError): ?>
-                <div class="status-alert alert-error"><?= $loginError ?></div>
-            <?php endif; ?>
-            <?php if ($loginSuccess): ?>
-                <div class="status-alert alert-success"><?= $loginSuccess ?></div>
+                <div class="status-alert alert-error"><?= e($loginError) ?></div>
             <?php endif; ?>
 
-            <form action="/auth/verify.php" method="POST" class="space-y-6">
+            <form action="login.php" method="POST" class="space-y-6">
                 <input type="hidden" name="role" id="user_role" value="member">
 
                 <div class="space-y-2">
-                    <label class="tech-label" id="identity-label">Membership ID / Email</label>
-                    <input type="text" name="identity" class="tech-input" placeholder="Enter credentials" required>
+                    <label class="tech-label" id="identity-label">Email Address</label>
+                    <input type="email" name="email" class="tech-input" placeholder="Enter email" required>
                 </div>
 
                 <div class="space-y-2">
                     <div class="flex justify-between items-center">
                         <label class="tech-label">Passcode</label>
-                        <a href="forgot.php" class="text-[8px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors">Forgot Password?</a>
+                        <a href="password_reset_request.php" class="text-[8px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors">Forgot Password?</a>
                     </div>
                     <input type="password" name="password" class="tech-input" placeholder="••••••••" required>
                 </div>
@@ -309,9 +332,9 @@ require_once __DIR__ . "/partials/header.php";
         // Visual Context Update
         const label = document.getElementById('identity-label');
         if(role === 'member') {
-            label.innerText = 'Membership ID / Email';
+            label.innerText = 'Member Email';
         } else if(role === 'vendor') {
-            label.innerText = 'Vendor License ID / Email';
+            label.innerText = 'Vendor Email';
         }
 
         // Animation Feedback

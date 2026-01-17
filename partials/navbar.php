@@ -12,6 +12,7 @@
 $current_page = basename($_SERVER['PHP_SELF']);
 $home_pages = ['testing.php', 'index.php'];
 $is_home = in_array($current_page, $home_pages);
+$is_logged_in = function_exists('is_logged_in') && is_logged_in();
 
 if (!function_exists('is_active')) {
     function is_active($page) {
@@ -145,8 +146,12 @@ if (!function_exists('is_active')) {
     <a href="vendors.php" class="mobile-link <?= is_active('vendors.php') ?>">Connect</a>
     
     <div class="mt-8 flex flex-col gap-3 w-full px-12">
-        <a href="login.php" class="w-full py-4 border border-slate-200 text-slate-900 text-center text-[10px] font-black uppercase tracking-widest eaa-radius">Sign In</a>
-        <a href="join.php" class="w-full py-4 bg-slate-900 text-white text-center text-[10px] font-black uppercase tracking-widest eaa-radius shadow-lg">Join the Guild</a>
+        <?php if ($is_logged_in): ?>
+            <a href="accountpage.php" class="w-full py-4 bg-slate-900 text-white text-center text-[10px] font-black uppercase tracking-widest eaa-radius shadow-lg">My Account</a>
+        <?php else: ?>
+            <a href="login.php" class="w-full py-4 border border-slate-200 text-slate-900 text-center text-[10px] font-black uppercase tracking-widest eaa-radius">Sign In</a>
+            <a href="join.php" class="w-full py-4 bg-slate-900 text-white text-center text-[10px] font-black uppercase tracking-widest eaa-radius shadow-lg">Join the Guild</a>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -167,18 +172,29 @@ if (!function_exists('is_active')) {
             <a href="events.php" class="nav-link <?= is_active('events.php') ?>">Event</a>
             <a href="career.php" class="nav-link <?= is_active('career.php') ?>">Career</a>
             <a href="vendors.php" class="nav-link <?= is_active('vendors.php') ?>">Connect</a>
+            <?php if ($is_logged_in): ?>
+                <a href="accountpage.php" class="nav-link <?= is_active('accountpage.php') ?>">My Account</a>
+            <?php endif; ?>
         </div>
 
         <!-- AUTH & MOBILE TOGGLE -->
         <div class="flex items-center gap-3 lg:gap-4">
             <!-- Desktop Auth -->
             <div class="hidden lg:flex items-center gap-2 border-l border-slate-200 pl-4">
-                <a href="login.php" class="auth-button border border-slate-200 px-4 py-2 text-[9px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50">Sign In</a>
-                <a href="join.php" class="auth-button bg-slate-800 text-white px-5 py-2 text-[9px] font-black uppercase tracking-widest hover:bg-slate-900 shadow-sm transition-all">Join Us</a>
+                <?php if ($is_logged_in): ?>
+                    <a href="accountpage.php" class="auth-button bg-slate-900 text-white px-5 py-2 text-[9px] font-black uppercase tracking-widest hover:bg-slate-900 shadow-sm transition-all">My Account</a>
+                <?php else: ?>
+                    <a href="login.php" class="auth-button border border-slate-200 px-4 py-2 text-[9px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50">Sign In</a>
+                    <a href="join.php" class="auth-button bg-slate-800 text-white px-5 py-2 text-[9px] font-black uppercase tracking-widest hover:bg-slate-900 shadow-sm transition-all">Join Us</a>
+                <?php endif; ?>
             </div>
 
             <!-- Mobile Sign In -->
-            <a href="login.php" class="lg:hidden px-3 py-1.5 border border-slate-200 text-[8px] font-black uppercase tracking-widest text-slate-600 eaa-radius">Sign In</a>
+            <?php if ($is_logged_in): ?>
+                <a href="accountpage.php" class="lg:hidden px-3 py-1.5 bg-slate-900 text-white text-[8px] font-black uppercase tracking-widest eaa-radius">My Account</a>
+            <?php else: ?>
+                <a href="login.php" class="lg:hidden px-3 py-1.5 border border-slate-200 text-[8px] font-black uppercase tracking-widest text-slate-600 eaa-radius">Sign In</a>
+            <?php endif; ?>
 
             <!-- MOBILE HAMBURGER BUTTON -->
             <button id="open-drawer" class="lg:hidden p-2 text-slate-800" aria-label="Open Menu">

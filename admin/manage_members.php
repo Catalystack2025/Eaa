@@ -8,18 +8,147 @@
    ✅ Standardized 5px Radius & Smoke Grey Palette
    ========================================================= */
 
-session_start();
+declare(strict_types=1);
+
+require_once __DIR__ . '/../lib/helpers.php';
+require_once __DIR__ . '/../config/db.php';
+
+start_session();
 
 $pageTitle = 'Architect Registry | EAA Root';
 
-// Mock Member Data for the Ledger
-$members = [
-    ['id' => 'EAA-2024-892', 'name' => 'Ar. Suresh Kumar', 'cat' => 'Licensed', 'coa' => 'CA/2012/55432', 'status' => 'Active', 'joined' => '12 Jan 2024'],
-    ['id' => 'EAA-2025-104', 'name' => 'Ar. Priya Sharma', 'cat' => 'Licensed', 'coa' => 'CA/2018/89021', 'status' => 'Active', 'joined' => '05 Feb 2025'],
-    ['id' => 'EAA-2026-012', 'name' => 'Vijay Prasath', 'cat' => 'Student', 'coa' => 'S.A.P Erode', 'status' => 'Pending', 'joined' => '14 Jan 2026'],
-    ['id' => 'EAA-2024-771', 'name' => 'Ar. Rajesh M.', 'cat' => 'Professional', 'coa' => 'Registry Verified', 'status' => 'Expired', 'joined' => '22 Jun 2024'],
-    ['id' => 'EAA-2025-442', 'name' => 'Ar. Lakshmi N.', 'cat' => 'Licensed', 'coa' => 'CA/2015/66712', 'status' => 'Active', 'joined' => '18 Aug 2025'],
-];
+$allowedStatuses = ['pending', 'active', 'rejected'];
+
+function column_exists(string $table, string $column): bool
+{
+    $stmt = db()->prepare(
+        'SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = :table
+           AND COLUMN_NAME = :column'
+    );
+    $stmt->execute([
+        'table' => $table,
+        'column' => $column,
+    ]);
+
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+    $userId = (int) ($_POST['user_id'] ?? 0);
+    $statusMap = [
+        'approve' => 'active',
+        'reject' => 'rejected',
+    ];
+
+    if ($userId > 0 && isset($statusMap[$action]) && csrf_verify($_POST['csrf_token'] ?? null)) {
+        $stmt = db()->prepare('UPDATE users SET status = :status WHERE id = :id AND role = :role');
+        $stmt->execute([
+            'status' => $statusMap[$action],
+            'id' => $userId,
+            'role' => 'member',
+        ]);
+    }
+
+    $redirect = basename(__FILE__);
+    if (!empty($_SERVER['QUERY_STRING'])) {
+        $redirect .= '?' . $_SERVER['QUERY_STRING'];
+    }
+
+    header('Location: ' . $redirect);
+    exit;
+}
+
+$status = $_GET['status'] ?? '';
+$category = $_GET['category'] ?? '';
+$search = trim($_GET['search'] ?? '');
+$page = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = 10;
+
+$categoryColumn = column_exists('member_profile', 'category') ? 'member_profile.category' : null;
+$filters = ['users.role = :role'];
+$params = ['role' => 'member'];
+
+if (in_array($status, $allowedStatuses, true)) {
+    $filters[] = 'users.status = :status';
+    $params['status'] = $status;
+}
+
+if ($categoryColumn && $category !== '') {
+    $filters[] = $categoryColumn . ' = :category';
+    $params['category'] = $category;
+}
+
+if ($search !== '') {
+    $filters[] = '(users.full_name LIKE :search OR users.email LIKE :search OR member_profile.phone LIKE :search)';
+    $params['search'] = '%' . $search . '%';
+}
+
+$whereClause = $filters ? ('WHERE ' . implode(' AND ', $filters)) : '';
+
+$pendingFilters = $filters;
+$pendingParams = $params;
+if (!in_array($status, $allowedStatuses, true)) {
+    $pendingFilters[] = 'users.status = :pending_status';
+    $pendingParams['pending_status'] = 'pending';
+} else {
+    $pendingFilters = array_filter($pendingFilters, static fn($filter) => $filter !== 'users.status = :status');
+    $pendingParams = array_filter($pendingParams, static fn($key) => $key !== 'status', ARRAY_FILTER_USE_KEY);
+    $pendingFilters[] = 'users.status = :pending_status';
+    $pendingParams['pending_status'] = 'pending';
+}
+
+$pendingWhereClause = $pendingFilters ? ('WHERE ' . implode(' AND ', $pendingFilters)) : '';
+
+$pendingStmt = db()->prepare(
+    'SELECT COUNT(*)
+     FROM users
+     JOIN member_profile ON member_profile.user_id = users.id
+     ' . $pendingWhereClause
+);
+$pendingStmt->execute($pendingParams);
+$pendingCount = (int) $pendingStmt->fetchColumn();
+
+$countStmt = db()->prepare(
+    'SELECT COUNT(*)
+     FROM users
+     JOIN member_profile ON member_profile.user_id = users.id
+     ' . $whereClause
+);
+$countStmt->execute($params);
+$totalMembers = (int) $countStmt->fetchColumn();
+$totalPages = max(1, (int) ceil($totalMembers / $perPage));
+$page = min($page, $totalPages);
+$offset = ($page - 1) * $perPage;
+
+$categorySelect = $categoryColumn ? ($categoryColumn . ' AS category') : "'Member' AS category";
+
+$query =
+    'SELECT users.id, users.full_name, users.email, users.status, users.created_at,
+            member_profile.phone,
+            ' . $categorySelect . '
+     FROM users
+     JOIN member_profile ON member_profile.user_id = users.id
+     ' . $whereClause . '
+     ORDER BY users.created_at DESC
+     LIMIT :limit OFFSET :offset';
+
+$stmt = db()->prepare($query);
+foreach ($params as $key => $value) {
+    $stmt->bindValue(':' . $key, $value);
+}
+$stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
+$members = $stmt->fetchAll();
+
+function build_query(array $overrides = []): string
+{
+    return http_build_query(array_merge($_GET, $overrides));
+}
 
 require_once 'partials/header.php';
 ?>
@@ -106,32 +235,50 @@ require_once 'partials/header.php';
         <div class="flex gap-4">
             <div class="px-8 py-4 bg-white border border-slate-200 eaa-radius flex flex-col justify-center shadow-sm">
                 <span class="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Nodes</span>
-                <span class="text-xl font-black text-slate-900">524</span>
+                <span class="text-xl font-black text-slate-900"><?= $totalMembers ?></span>
             </div>
             <div class="px-8 py-4 bg-white border border-slate-200 eaa-radius flex flex-col justify-center shadow-sm">
                 <span class="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Pending Verification</span>
-                <span class="text-xl font-black text-amber-600">18</span>
+                <span class="text-xl font-black text-amber-600"><?= $pendingCount ?></span>
             </div>
             <button class="px-10 py-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest eaa-radius shadow-2xl hover:bg-slate-700 transition-all">+ Add Member</button>
         </div>
     </div>
 
-    <!-- FILTERING BAR -->
-    <div class="p-4 bg-white border border-slate-100 eaa-radius flex flex-col lg:flex-row gap-4 justify-between items-center shadow-sm">
-        <div class="flex items-center gap-1 overflow-x-auto no-scrollbar w-full lg:w-auto">
-            <button class="px-6 py-2.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius">All Registry</button>
-            <button class="px-6 py-2.5 text-slate-400 hover:text-slate-900 text-[9px] font-black uppercase tracking-widest transition-all">Licensed</button>
-            <button class="px-6 py-2.5 text-slate-400 hover:text-slate-900 text-[9px] font-black uppercase tracking-widest transition-all">Student</button>
-            <button class="px-6 py-2.5 text-slate-400 hover:text-slate-900 text-[9px] font-black uppercase tracking-widest transition-all">Professional</button>
-            <div class="w-px h-4 bg-slate-100 mx-2"></div>
-            <button class="px-6 py-2.5 text-amber-600 font-black text-[9px] uppercase tracking-widest">Awaiting (18)</button>
+    <?php if ($statusMessage): ?>
+        <div class="mb-8 bg-white border border-slate-200 eaa-radius px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-600">
+            <?= e($statusMessage) ?>
         </div>
-        
+    <?php endif; ?>
+
+    <!-- FILTERING BAR -->
+    <form method="get" class="p-4 bg-white border border-slate-100 eaa-radius flex flex-col lg:flex-row gap-4 justify-between items-center shadow-sm">
+        <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            <div class="flex items-center gap-2">
+                <label class="text-[8px] font-black uppercase tracking-[0.3em] text-slate-400">Status</label>
+                <select name="status" class="bg-slate-50 border border-slate-100 eaa-radius px-4 py-2 text-[9px] font-bold uppercase tracking-widest">
+                    <option value="">All</option>
+                    <?php foreach ($allowedStatuses as $option): ?>
+                        <option value="<?= e($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= e($option) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="text-[8px] font-black uppercase tracking-[0.3em] text-slate-400">Category</label>
+                <input type="text" name="category" value="<?= e($category) ?>" placeholder="e.g. Licensed" class="bg-slate-50 border border-slate-100 eaa-radius px-4 py-2 text-[9px] font-bold uppercase tracking-widest">
+            </div>
+        </div>
+
         <div class="relative w-full lg:w-96">
-            <input type="text" placeholder="FILTER BY NAME, ID, OR COA_REF..." class="w-full bg-slate-50 border border-slate-100 eaa-radius px-6 py-3.5 text-[9px] font-bold uppercase tracking-widest outline-none focus:border-slate-400 transition-all">
+            <input type="text" name="search" value="<?= e($search) ?>" placeholder="FILTER BY NAME, EMAIL, OR PHONE..." class="w-full bg-slate-50 border border-slate-100 eaa-radius px-6 py-3.5 text-[9px] font-bold uppercase tracking-widest outline-none focus:border-slate-400 transition-all">
             <i class="fa-solid fa-magnifying-glass absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 text-[10px]"></i>
         </div>
-    </div>
+
+        <div class="flex gap-2">
+            <button type="submit" class="px-6 py-3 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius">Apply</button>
+            <a href="<?= e(basename(__FILE__)) ?>" class="px-6 py-3 text-slate-500 text-[9px] font-black uppercase tracking-widest">Reset</a>
+        </div>
+    </form>
 </div>
 
 <!-- REDESIGNED MEMBER LEDGER TABLE -->
@@ -149,78 +296,116 @@ require_once 'partials/header.php';
                 </tr>
             </thead>
             <tbody>
-                <?php foreach($members as $m): ?>
-                <tr>
-                    <td>
-                        <div class="flex flex-col">
-                            <span class="text-[12px] font-black text-slate-900 uppercase tracking-tight mb-1"><?= $m['name'] ?></span>
-                            <div class="flex items-center gap-2">
-                                <span class="text-[8px] font-bold text-slate-400 uppercase tracking-[0.1em]"><?= $m['id'] ?></span>
+                <?php if (empty($members)): ?>
+                    <tr>
+                        <td colspan="6" class="text-center text-[10px] font-bold uppercase tracking-widest text-slate-400 py-10">
+                            No members found for the selected filters.
+                        </td>
+                    </tr>
+                <?php endif; ?>
+                <?php foreach ($members as $member): ?>
+                    <?php
+                    $statusClass = 'bg-slate-100 text-slate-500';
+                    if ($member['status'] === 'active') {
+                        $statusClass = 'bg-green-50 text-green-600 border-green-100';
+                    }
+                    if ($member['status'] === 'pending') {
+                        $statusClass = 'bg-amber-50 text-amber-600 border-amber-100';
+                    }
+                    if ($member['status'] === 'rejected') {
+                        $statusClass = 'bg-red-50 text-red-600 border-red-100';
+                    }
+                    $joined = $member['created_at'] ? date('d M Y', strtotime($member['created_at'])) : '—';
+                    ?>
+                    <tr>
+                        <td>
+                            <div class="flex flex-col">
+                                <span class="text-[12px] font-black text-slate-900 uppercase tracking-tight mb-1"><?= e($member['full_name']) ?></span>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[8px] font-bold text-slate-400 uppercase tracking-[0.1em]">EAA-MEM-<?= e((string) $member['id']) ?></span>
+                                </div>
                             </div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded bg-slate-50 flex items-center justify-center text-slate-300 border border-slate-100">
-                                <?php if($m['cat'] == 'Licensed'): ?>
-                                    <i class="fa-solid fa-certificate text-[10px]"></i>
-                                <?php elseif($m['cat'] == 'Student'): ?>
-                                    <i class="fa-solid fa-graduation-cap text-[10px]"></i>
-                                <?php else: ?>
+                        </td>
+                        <td>
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded bg-slate-50 flex items-center justify-center text-slate-300 border border-slate-100">
                                     <i class="fa-solid fa-user-tie text-[10px]"></i>
+                                </div>
+                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest"><?= e($member['category']) ?></span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="flex flex-col">
+                                <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest"><?= e($member['phone']) ?></span>
+                                <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest"><?= e($member['email']) ?></span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="flex flex-col">
+                                <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest"><?= e($joined) ?></span>
+                                <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Enrollment</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="px-3 py-1 text-[7px] font-black uppercase tracking-widest rounded border <?= $statusClass ?>">
+                                <?= e($member['status']) ?>
+                            </span>
+                        </td>
+                        <td>
+                            <div class="flex justify-end gap-2">
+                                <?php if ($member['status'] !== 'active'): ?>
+                                    <form method="post">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="user_id" value="<?= e((string) $member['id']) ?>">
+                                        <input type="hidden" name="action" value="approve">
+                                        <button class="action-node hover:!text-green-600" title="Approve Member">
+                                            <i class="fa-solid fa-check text-[11px]"></i>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                                <?php if ($member['status'] !== 'rejected'): ?>
+                                    <form method="post">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="user_id" value="<?= e((string) $member['id']) ?>">
+                                        <input type="hidden" name="action" value="reject">
+                                        <button class="action-node hover:!bg-red-500 hover:!border-red-500" title="Reject Member">
+                                            <i class="fa-solid fa-xmark text-[11px]"></i>
+                                        </button>
+                                    </form>
                                 <?php endif; ?>
                             </div>
-                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest"><?= $m['cat'] ?></span>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="flex flex-col">
-                            <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest"><?= $m['coa'] ?></span>
-                            <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Official Registry</span>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="flex flex-col">
-                            <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest"><?= $m['joined'] ?></span>
-                            <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Enrollment</span>
-                        </div>
-                    </td>
-                    <td>
-                        <?php 
-                        $statusClass = 'bg-slate-100 text-slate-500';
-                        if($m['status'] == 'Active') $statusClass = 'bg-green-50 text-green-600 border-green-100';
-                        if($m['status'] == 'Pending') $statusClass = 'bg-amber-50 text-amber-600 border-amber-100';
-                        if($m['status'] == 'Expired') $statusClass = 'bg-red-50 text-red-600 border-red-100';
-                        ?>
-                        <span class="px-3 py-1 text-[7px] font-black uppercase tracking-widest rounded border <?= $statusClass ?>">
-                            <?= $m['status'] ?>
-                        </span>
-                    </td>
-                    <td>
-                        <div class="flex justify-end gap-2">
-                            <button class="action-node" title="View Profile"><i class="fa-solid fa-id-card-clip text-[11px]"></i></button>
-                            <button class="action-node" title="Edit Credentials"><i class="fa-solid fa-pen-to-square text-[11px]"></i></button>
-                            <button class="action-node hover:!bg-red-500 hover:!border-red-500" title="Suspend Node"><i class="fa-solid fa-ban text-[11px]"></i></button>
-                        </div>
-                    </td>
-                </tr>
+                        </td>
+                    </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
     </div>
-    
+
     <!-- Table Footer / Pagination -->
     <div class="px-8 py-6 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
-        <span class="text-[8px] font-black uppercase tracking-widest text-slate-400 italic">Chronicle Node: Accessing Page 01 // Total 524 Architects Loaded</span>
+        <span class="text-[8px] font-black uppercase tracking-widest text-slate-400 italic">Chronicle Node: Accessing Page <?= e((string) $page) ?> // Total <?= e((string) $totalMembers) ?> Architects</span>
         <div class="flex gap-2">
-            <button class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-slate-300 hover:border-slate-400 transition-all"><i class="fa-solid fa-chevron-left text-[10px]"></i></button>
-            <button class="w-9 h-9 flex items-center justify-center bg-slate-900 text-white eaa-radius text-[10px] font-black shadow-lg shadow-slate-200">1</button>
-            <button class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-[10px] font-black text-slate-400 hover:border-slate-400 transition-all">2</button>
-            <button class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-slate-400 hover:border-slate-400 transition-all"><i class="fa-solid fa-chevron-right text-[10px]"></i></button>
+            <?php
+            $prevPage = max(1, $page - 1);
+            $nextPage = min($totalPages, $page + 1);
+            ?>
+            <a href="?<?= e(build_query(['page' => $prevPage])) ?>" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-slate-300 hover:border-slate-400 transition-all">
+                <i class="fa-solid fa-chevron-left text-[10px]"></i>
+            </a>
+            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                <?php if ($i === $page): ?>
+                    <span class="w-9 h-9 flex items-center justify-center bg-slate-900 text-white eaa-radius text-[10px] font-black shadow-lg shadow-slate-200"><?= $i ?></span>
+                <?php else: ?>
+                    <a href="?<?= e(build_query(['page' => $i])) ?>" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-[10px] font-black text-slate-400 hover:border-slate-400 transition-all"><?= $i ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+            <a href="?<?= e(build_query(['page' => $nextPage])) ?>" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-slate-300 hover:border-slate-400 transition-all">
+                <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </a>
         </div>
     </div>
 </div>
 
-<?php 
-require_once 'partials/footer.php'; 
+<?php
+require_once 'partials/footer.php';
 ?>

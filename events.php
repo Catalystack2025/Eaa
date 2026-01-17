@@ -296,7 +296,15 @@ $events = [
                                     <i class="fa-solid fa-arrow-right-long text-[8px]"></i>
                                 </div>
                             </div>
-                            <button class="w-full py-3 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-lg shadow-slate-200">Register Now</button>
+                            <?php if ($isLoggedIn): ?>
+                                <a href="events.php?success=1" class="block">
+                                    <span class="block w-full text-center py-3 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-lg shadow-slate-200">Register to Attend</span>
+                                </a>
+                            <?php else: ?>
+                                <a href="login.php" class="block">
+                                    <span class="block w-full text-center py-3 border border-slate-200 text-slate-700 text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-50 transition-all">Sign in to Register</span>
+                                </a>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -320,7 +328,11 @@ $events = [
             <p id="modalDesc" class="text-xs text-slate-500 leading-loose mb-10 text-justify uppercase tracking-widest font-semibold"></p>
             
             <div class="grid grid-cols-2 gap-4 pt-10 border-t border-slate-50">
-                <button class="px-6 py-5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-xl">Register Now</button>
+                <?php if ($isLoggedIn): ?>
+                    <a href="events.php?success=1" class="px-6 py-5 bg-slate-900 text-white text-center text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-xl">Register to Attend</a>
+                <?php else: ?>
+                    <a href="login.php" class="px-6 py-5 border border-slate-200 text-center text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-50 transition-all">Sign in to Register</a>
+                <?php endif; ?>
                 <button class="px-6 py-5 border border-slate-200 text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-50 transition-all">Download Info</button>
             </div>
         </div>
