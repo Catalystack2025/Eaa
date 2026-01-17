@@ -16,49 +16,77 @@ start_session();
 $pageTitle = 'Connect / Material Catalog | EAA';
 require_once __DIR__ . "/partials/header.php";
 
-// Mock Product Data (Derived from Vendor Dashboard logic)
-$products = [
-    [
-        'id' => 'EAA-MAT-2026-001',
-        'name' => '12mm Reflective Toughened Glass',
-        'vendor' => 'Erode Glass Works Ltd',
-        'category' => 'Glass & Glazing',
-        'price' => '450',
-        'phone' => '+91 99944 12345',
-        'email' => 'sales@erodeglass.com',
-        'image' => 'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=800&q=80'
-    ],
-    [
-        'id' => 'EAA-MAT-2026-002',
-        'name' => 'Imported Italian Marble Slabs',
-        'vendor' => 'Premium Stones Erode',
-        'category' => 'Flooring & Tiles',
-        'price' => '1250',
-        'phone' => '+91 98427 55667',
-        'email' => 'info@premiumstones.com',
-        'image' => 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80'
-    ],
-    [
-        'id' => 'EAA-MAT-2026-003',
-        'name' => 'Weatherproof ACP Cladding',
-        'vendor' => 'Alu-Systems India',
-        'category' => 'Cladding Systems',
-        'price' => '280',
-        'phone' => '+91 94433 88990',
-        'email' => 'support@alusystems.in',
-        'image' => 'https://images.unsplash.com/photo-1486718448742-163732cd1544?w=800&q=80'
-    ],
-    [
-        'id' => 'EAA-MAT-2026-004',
-        'name' => 'Structural H-Beams (Grade A)',
-        'vendor' => 'Steel India Solutions',
-        'category' => 'Structural Steel',
-        'price' => '180',
-        'phone' => '+91 90033 11223',
-        'email' => 'order@steelindia.com',
-        'image' => 'https://images.unsplash.com/photo-1513828583688-c52646db42da?w=800&q=80'
-    ]
+$filters = [
+    'category' => trim($_GET['category'] ?? ''),
+    'location' => trim($_GET['location'] ?? ''),
+    'search' => trim($_GET['search'] ?? ''),
+    'min_price' => $_GET['min_price'] ?? '',
+    'max_price' => $_GET['max_price'] ?? '',
 ];
+
+$minPrice = filter_var($filters['min_price'], FILTER_VALIDATE_FLOAT);
+$maxPrice = filter_var($filters['max_price'], FILTER_VALIDATE_FLOAT);
+
+$categoryOptions = db()->query("SELECT DISTINCT category FROM vendor_products WHERE status = 'active' ORDER BY category")
+    ->fetchAll(PDO::FETCH_COLUMN);
+$locationOptions = db()->query(
+    "SELECT DISTINCT location FROM vendor_products
+     WHERE status = 'active' AND location IS NOT NULL AND location <> ''
+     ORDER BY location"
+)->fetchAll(PDO::FETCH_COLUMN);
+
+$conditions = ["vendor_products.status = 'active'"];
+$params = [];
+
+if ($filters['category'] !== '') {
+    $conditions[] = 'vendor_products.category = :category';
+    $params['category'] = $filters['category'];
+}
+
+if ($filters['location'] !== '') {
+    $conditions[] = 'vendor_products.location = :location';
+    $params['location'] = $filters['location'];
+}
+
+if ($minPrice !== false) {
+    $conditions[] = 'vendor_products.price >= :min_price';
+    $params['min_price'] = $minPrice;
+}
+
+if ($maxPrice !== false) {
+    $conditions[] = 'vendor_products.price <= :max_price';
+    $params['max_price'] = $maxPrice;
+}
+
+if ($filters['search'] !== '') {
+    $conditions[] = '(vendor_products.name LIKE :search OR vendor_profile.company_name LIKE :search)';
+    $params['search'] = '%' . $filters['search'] . '%';
+}
+
+$query = sprintf(
+    "SELECT vendor_products.id,
+            vendor_products.name,
+            vendor_products.category,
+            vendor_products.price,
+            vendor_products.unit,
+            vendor_products.location,
+            vendor_products.image_url,
+            vendor_profile.company_name,
+            vendor_profile.phone,
+            users.email
+     FROM vendor_products
+     JOIN vendor_profile ON vendor_products.vendor_id = vendor_profile.id
+     JOIN users ON vendor_profile.user_id = users.id
+     WHERE %s
+     ORDER BY vendor_products.created_at DESC",
+    implode(' AND ', $conditions)
+);
+
+$stmt = db()->prepare($query);
+$stmt->execute($params);
+$products = $stmt->fetchAll();
+
+$canViewContact = can_view_vendor_contact($_SESSION['role'] ?? null);
 ?>
 
 <style>
@@ -198,57 +226,93 @@ $products = [
 
 <!-- FILTERING & SEARCH -->
 <section class="py-10 bg-slate-50 border-b border-slate-100 sticky top-[80px] z-40">
-    <div class="container mx-auto px-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
-            <button class="px-6 py-2 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius">All Materials</button>
-            <button class="px-6 py-2 text-slate-400 hover:text-slate-900 text-[9px] font-black uppercase tracking-widest transition-all">Glass</button>
-            <button class="px-6 py-2 text-slate-400 hover:text-slate-900 text-[9px] font-black uppercase tracking-widest transition-all">Flooring</button>
-            <button class="px-6 py-2 text-slate-400 hover:text-slate-900 text-[9px] font-black uppercase tracking-widest transition-all">Structural</button>
-        </div>
-        
-        <div class="relative w-full md:w-72">
-            <input type="text" placeholder="Search Materials..." class="w-full bg-white border border-slate-200 eaa-radius px-5 py-3 text-[10px] font-bold uppercase tracking-widest outline-none focus:border-slate-900 transition-all">
-            <i class="fa-solid fa-magnifying-glass absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
-        </div>
+    <div class="container mx-auto px-6">
+        <form method="get" class="grid grid-cols-1 lg:grid-cols-5 gap-4 items-end">
+            <div>
+                <label class="tech-label">Category</label>
+                <select name="category" class="w-full bg-white border border-slate-200 eaa-radius px-4 py-3 text-[10px] font-bold uppercase tracking-widest outline-none focus:border-slate-900 transition-all">
+                    <option value="">All Materials</option>
+                    <?php foreach ($categoryOptions as $category): ?>
+                        <option value="<?= e($category) ?>" <?= $filters['category'] === $category ? 'selected' : '' ?>><?= e($category) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div>
+                <label class="tech-label">Location</label>
+                <select name="location" class="w-full bg-white border border-slate-200 eaa-radius px-4 py-3 text-[10px] font-bold uppercase tracking-widest outline-none focus:border-slate-900 transition-all">
+                    <option value="">All Locations</option>
+                    <?php foreach ($locationOptions as $location): ?>
+                        <option value="<?= e($location) ?>" <?= $filters['location'] === $location ? 'selected' : '' ?>><?= e($location) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div>
+                <label class="tech-label">Min Price</label>
+                <input type="number" step="0.01" name="min_price" value="<?= e((string) $filters['min_price']) ?>" placeholder="Min" class="w-full bg-white border border-slate-200 eaa-radius px-4 py-3 text-[10px] font-bold uppercase tracking-widest outline-none focus:border-slate-900 transition-all">
+            </div>
+            <div>
+                <label class="tech-label">Max Price</label>
+                <input type="number" step="0.01" name="max_price" value="<?= e((string) $filters['max_price']) ?>" placeholder="Max" class="w-full bg-white border border-slate-200 eaa-radius px-4 py-3 text-[10px] font-bold uppercase tracking-widest outline-none focus:border-slate-900 transition-all">
+            </div>
+            <div class="relative">
+                <label class="tech-label">Search</label>
+                <input type="text" name="search" value="<?= e($filters['search']) ?>" placeholder="Search Materials..." class="w-full bg-white border border-slate-200 eaa-radius px-5 py-3 text-[10px] font-bold uppercase tracking-widest outline-none focus:border-slate-900 transition-all">
+                <i class="fa-solid fa-magnifying-glass absolute right-5 top-[52px] -translate-y-1/2 text-slate-300 text-xs"></i>
+            </div>
+            <div class="lg:col-span-5 flex flex-wrap gap-3 pt-2">
+                <button type="submit" class="px-6 py-2 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius">Apply Filters</button>
+                <a href="<?= e(url('vendors.php')) ?>" class="px-6 py-2 border border-slate-200 text-slate-400 text-[9px] font-black uppercase tracking-widest eaa-radius">Reset</a>
+            </div>
+        </form>
     </div>
 </section>
 
 <!-- PRODUCT CATALOG GRID -->
 <main class="py-24 bg-white relative overflow-hidden">
     <div class="container mx-auto px-6 relative z-10">
-        
+        <?php if (empty($products)): ?>
+            <div class="bg-slate-50 border border-slate-100 eaa-radius p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
+                No products match your filters right now.
+            </div>
+        <?php else: ?>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             <?php foreach($products as $index => $p): ?>
             <div class="product-card eaa-radius reveal" style="transition-delay: <?= ($index % 4) * 100 ?>ms;">
                 <div class="product-image">
-                    <img src="<?= $p['image'] ?>" alt="<?= $p['name'] ?>">
-                    <div class="inlay-label"><?= $p['category'] ?></div>
+                    <img src="<?= e($p['image_url'] ?? '') ?>" alt="<?= e($p['name']) ?>" onerror="this.src='https://images.unsplash.com/photo-1486718448742-163732cd1544?w=800&q=80'">
+                    <div class="inlay-label"><?= e($p['category']) ?></div>
                 </div>
                 
                 <div class="p-8 flex flex-col flex-1">
-                    <span class="tech-label">Ref: <?= $p['id'] ?></span>
-                    <h3 class="font-bold text-sm text-slate-900 uppercase tracking-tight mb-2 flex-1"><?= $p['name'] ?></h3>
+                    <span class="tech-label">Ref: <?= e((string) $p['id']) ?></span>
+                    <h3 class="font-bold text-sm text-slate-900 uppercase tracking-tight mb-2 flex-1"><?= e($p['name']) ?></h3>
+                    <span class="text-[8px] font-bold uppercase tracking-widest text-slate-400"><?= e($p['location'] ?? 'Location on request') ?></span>
                     
                     <div class="mt-4 pt-4 border-t border-slate-50">
                         <span class="text-[7px] font-black text-slate-400 uppercase tracking-widest block mb-1">Supplied By</span>
-                        <span class="text-[10px] font-black text-slate-900 uppercase italic"><?= $p['vendor'] ?></span>
+                        <span class="text-[10px] font-black text-slate-900 uppercase italic"><?= e($p['company_name']) ?></span>
                     </div>
 
                     <div class="mt-8 flex items-center justify-between">
                         <div>
                             <span class="text-[7px] font-black text-slate-400 uppercase tracking-widest block">Unit Price</span>
-                            <span class="text-base font-black text-slate-900">₹<?= $p['price'] ?> <small class="text-[8px]">/ SQFT</small></span>
+                            <span class="text-base font-black text-slate-900">₹<?= e(number_format((float) $p['price'], 2)) ?> <small class="text-[8px]">/ <?= e($p['unit']) ?></small></span>
                         </div>
-                        <button 
-                            onclick="openContactModal('<?= addslashes($p['vendor']) ?>', '<?= $p['phone'] ?>', '<?= $p['email'] ?>')"
-                            class="px-5 py-3 bg-slate-900 text-white text-[8px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-lg shadow-slate-200">
-                            Get Contact
-                        </button>
+                        <?php if ($canViewContact): ?>
+                            <button
+                                onclick="openContactModal('<?= e(addslashes($p['company_name'])) ?>', '<?= e(addslashes($p['phone'])) ?>', '<?= e(addslashes($p['email'])) ?>')"
+                                class="px-5 py-3 bg-slate-900 text-white text-[8px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-lg shadow-slate-200">
+                                Get Contact
+                            </button>
+                        <?php else: ?>
+                            <span class="text-[8px] font-black uppercase tracking-widest text-slate-400">Members Only</span>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
             <?php endforeach; ?>
         </div>
+        <?php endif; ?>
 
     </div>
 </main>

@@ -18,3 +18,26 @@ VALUES (
   '123 Vendor Lane, Erode',
   'https://vendor.example.com'
 );
+
+INSERT INTO vendor_products (vendor_id, name, category, price, unit, location, image_url, status)
+VALUES
+  (
+    (SELECT id FROM vendor_profile WHERE company_name = 'EAA Partner Studio'),
+    'High-Strength Structural Steel',
+    'Structural Steel',
+    185.00,
+    'SQFT',
+    'Erode',
+    'https://images.unsplash.com/photo-1513828583688-c52646db42da?w=800&q=80',
+    'active'
+  ),
+  (
+    (SELECT id FROM vendor_profile WHERE company_name = 'EAA Partner Studio'),
+    'Reflective Toughened Glass Panels',
+    'Glass & Glazing',
+    455.00,
+    'SQFT',
+    'Erode',
+    'https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=800&q=80',
+    'active'
+  );

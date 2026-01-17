@@ -25,6 +25,9 @@
         <a href="manage_vendors.php" class="nav-item <?= basename($_SERVER['PHP_SELF']) == 'manage_vendors.php' ? 'active' : '' ?>">
             <i class="fa-solid fa-truck-ramp-box w-5 text-center"></i> Vendor Directory
         </a>
+        <a href="manage_sponsors.php" class="nav-item <?= basename($_SERVER['PHP_SELF']) == 'manage_sponsors.php' ? 'active' : '' ?>">
+            <i class="fa-solid fa-handshake-angle w-5 text-center"></i> Sponsor Approvals
+        </a>
         <a href="manage_events.php" class="nav-item <?= basename($_SERVER['PHP_SELF']) == 'manage_events.php' ? 'active' : '' ?>">
             <i class="fa-solid fa-calendar-days w-5 text-center"></i> Event Planner
         </a>
