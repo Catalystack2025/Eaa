@@ -249,7 +249,7 @@ require_once __DIR__ . "/partials/header.php";
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label class="tech-label">Full Legal Name</label>
-                        <input type="text" class="tech-input" placeholder="Name" required>
+                        <input type="text" id="member-name" class="tech-input" placeholder="Name" required>
                     </div>
                     <div>
                         <label class="tech-label" id="id-label">COA Registration No.</label>
@@ -298,7 +298,7 @@ require_once __DIR__ . "/partials/header.php";
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label class="tech-label">Company Name</label>
-                        <input type="text" class="tech-input" placeholder="Brand Name" required>
+                        <input type="text" id="vendor-company" class="tech-input" placeholder="Brand Name" required>
                     </div>
                     <div>
                         <label class="tech-label">Material Category</label>
@@ -314,7 +314,7 @@ require_once __DIR__ . "/partials/header.php";
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label class="tech-label">Primary Contact Email</label>
-                        <input type="email" class="tech-input" placeholder="sales@brand.com" required>
+                        <input type="email" id="vendor-email" class="tech-input" placeholder="sales@brand.com" required>
                     </div>
                     <div>
                         <label class="tech-label">Office Hotline</label>
@@ -448,6 +448,22 @@ require_once __DIR__ . "/partials/header.php";
     function handleFinalSubmit(e, role) {
         e.preventDefault();
         document.getElementById('main-form-container').style.display = 'none';
+
+        const payload = new FormData();
+        if (role === 'member') {
+            payload.append('email', document.getElementById('member-email').value);
+            payload.append('name', document.getElementById('member-name').value);
+            payload.append('role', document.getElementById('membership-cat').value);
+        } else {
+            payload.append('email', document.getElementById('vendor-email').value);
+            payload.append('name', document.getElementById('vendor-company').value);
+            payload.append('role', 'Vendor');
+        }
+
+        fetch('actions/register.php', {
+            method: 'POST',
+            body: payload
+        }).catch(() => {});
         
         if(role === 'member') {
             document.getElementById('member-success').style.display = 'block';
