@@ -91,3 +91,20 @@ CREATE TABLE event_registrations (
   CONSTRAINT fk_event_reg_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE KEY uq_event_user (event_id, user_id)
 );
+
+CREATE TABLE team_members (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL UNIQUE,
+  photo_path VARCHAR(255) DEFAULT NULL,
+  title VARCHAR(120) NOT NULL,
+  category VARCHAR(80) NOT NULL,
+  visible TINYINT(1) NOT NULL DEFAULT 0,
+  approved TINYINT(1) NOT NULL DEFAULT 0,
+  featured TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_team_members_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_team_members_visibility (visible, approved),
+  INDEX idx_team_members_category (category),
+  INDEX idx_team_members_featured (featured)
+);

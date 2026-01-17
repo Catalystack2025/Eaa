@@ -37,6 +37,9 @@
             <a href="approvals_jobs.php" class="nav-item <?= basename($_SERVER['PHP_SELF']) == 'approvals_jobs.php' ? 'active' : '' ?>">
                 <i class="fa-solid fa-briefcase w-5 text-center"></i> Recruitment
             </a>
+            <a href="approvals_team.php" class="nav-item <?= basename($_SERVER['PHP_SELF']) == 'approvals_team.php' ? 'active' : '' ?>">
+                <i class="fa-solid fa-people-group w-5 text-center"></i> Council Profiles
+            </a>
         </div>
 
         <div class="mt-10 pt-10 border-t border-white/5">

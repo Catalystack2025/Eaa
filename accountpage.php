@@ -15,6 +15,90 @@ require_once __DIR__ . '/config/db.php';
 
 start_session();
 
+$currentUserId = $_SESSION['user_id'] ?? null;
+$teamProfile = null;
+
+if ($currentUserId !== null) {
+    $profileStmt = db()->prepare('SELECT photo_path, title, category, visible FROM team_members WHERE user_id = ?');
+    $profileStmt->execute([$currentUserId]);
+    $teamProfile = $profileStmt->fetch();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'team_profile_update') {
+    if ($currentUserId === null) {
+        flash_set('team_profile_error', 'Please sign in to update your council profile.');
+        redirect('accountpage.php');
+    }
+
+    if (!csrf_verify($_POST['csrf_token'] ?? null)) {
+        flash_set('team_profile_error', 'Invalid session token. Please try again.');
+        redirect('accountpage.php');
+    }
+
+    $title = trim($_POST['title'] ?? '');
+    $category = trim($_POST['category'] ?? '');
+    $visible = isset($_POST['visible']) ? 1 : 0;
+
+    if ($title === '' || $category === '') {
+        flash_set('team_profile_error', 'Please provide both your title and category.');
+        redirect('accountpage.php');
+    }
+
+    $uploadPath = $teamProfile['photo_path'] ?? null;
+    if (!empty($_FILES['photo']['name'])) {
+        if (!is_uploaded_file($_FILES['photo']['tmp_name'])) {
+            flash_set('team_profile_error', 'Unable to read the uploaded image.');
+            redirect('accountpage.php');
+        }
+
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mimeType = $finfo->file($_FILES['photo']['tmp_name']);
+        $allowedTypes = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+        ];
+
+        if (!isset($allowedTypes[$mimeType])) {
+            flash_set('team_profile_error', 'Please upload a JPG, PNG, or WebP image.');
+            redirect('accountpage.php');
+        }
+
+        $uploadDir = __DIR__ . '/public/uploads';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+
+        $filename = sprintf('team_%d_%s.%s', $currentUserId, bin2hex(random_bytes(6)), $allowedTypes[$mimeType]);
+        $targetPath = $uploadDir . '/' . $filename;
+        if (!move_uploaded_file($_FILES['photo']['tmp_name'], $targetPath)) {
+            flash_set('team_profile_error', 'Failed to store the uploaded image.');
+            redirect('accountpage.php');
+        }
+
+        $uploadPath = 'public/uploads/' . $filename;
+    }
+
+    $upsert = db()->prepare(
+        'INSERT INTO team_members (user_id, photo_path, title, category, visible)
+         VALUES (:user_id, :photo_path, :title, :category, :visible)
+         ON DUPLICATE KEY UPDATE photo_path = VALUES(photo_path), title = VALUES(title), category = VALUES(category), visible = VALUES(visible)'
+    );
+    $upsert->execute([
+        'user_id' => $currentUserId,
+        'photo_path' => $uploadPath,
+        'title' => $title,
+        'category' => $category,
+        'visible' => $visible,
+    ]);
+
+    flash_set('team_profile_status', 'Your council profile has been updated and submitted for review.');
+    redirect('accountpage.php');
+}
+
+$teamProfileStatus = flash_get('team_profile_status');
+$teamProfileError = flash_get('team_profile_error');
+
 $pageTitle = 'Member Console | Erode Architect Association';
 require_once __DIR__ . "/partials/header.php";
 
@@ -294,6 +378,74 @@ $member = [
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                </div>
+
+                <!-- COUNCIL PROFILE (Full Width) -->
+                <div class="lg:col-span-3 mt-4">
+                    <div class="console-card">
+                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 mb-8">
+                            <h3 class="font-druk text-xl uppercase">Council <span class="text-slate-400 italic">Profile</span></h3>
+                            <span class="text-[8px] font-black uppercase tracking-[0.3em] text-slate-400">Public team listing request</span>
+                        </div>
+                        <?php if ($teamProfileStatus): ?>
+                            <div class="mb-6 px-4 py-3 bg-green-50 border border-green-200 text-green-700 text-[10px] font-bold uppercase tracking-widest eaa-radius">
+                                <?= e($teamProfileStatus) ?>
+                            </div>
+                        <?php endif; ?>
+                        <?php if ($teamProfileError): ?>
+                            <div class="mb-6 px-4 py-3 bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold uppercase tracking-widest eaa-radius">
+                                <?= e($teamProfileError) ?>
+                            </div>
+                        <?php endif; ?>
+                        <form class="grid grid-cols-1 lg:grid-cols-3 gap-6" action="accountpage.php" method="post" enctype="multipart/form-data">
+                            <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="team_profile_update">
+                            <div class="lg:col-span-2 space-y-6">
+                                <div>
+                                    <label class="tech-label">Professional Title</label>
+                                    <input type="text" name="title" class="tech-input" placeholder="Principal Architect" value="<?= e($teamProfile['title'] ?? '') ?>" required>
+                                </div>
+                                <div>
+                                    <label class="tech-label">Council Category</label>
+                                    <select name="category" class="tech-input" required>
+                                        <?php
+                                        $categories = ['Principal', 'Senior', 'Associate', 'Advisor', 'Staff'];
+                                        $selectedCategory = $teamProfile['category'] ?? '';
+                                        foreach ($categories as $category):
+                                        ?>
+                                            <option value="<?= e($category) ?>" <?= $selectedCategory === $category ? 'selected' : '' ?>><?= e($category) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <label class="flex items-center gap-3 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                                        <input type="checkbox" name="visible" class="accent-slate-900" <?= !empty($teamProfile['visible']) ? 'checked' : '' ?>>
+                                        Ready to publish my profile
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="space-y-6">
+                                <div class="border border-slate-100 eaa-radius p-4 bg-slate-50">
+                                    <span class="tech-label">Profile Photo</span>
+                                    <div class="mt-3 flex items-center gap-4">
+                                        <?php
+                                        $photoPreview = $teamProfile['photo_path'] ?? null;
+                                        $photoUrl = $photoPreview ? asset($photoPreview) : 'https://via.placeholder.com/120x160?text=EAA';
+                                        ?>
+                                        <img src="<?= e($photoUrl) ?>" alt="Profile preview" class="w-20 h-28 object-cover eaa-radius border border-slate-200">
+                                        <div class="flex-1">
+                                            <input type="file" name="photo" accept="image/png,image/jpeg,image/webp" class="text-[9px] font-bold text-slate-500">
+                                            <p class="text-[8px] text-slate-400 mt-2 uppercase tracking-widest">Portrait orientation recommended</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full py-4 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all">Submit for Review</button>
+                                <p class="text-[8px] text-slate-400 uppercase tracking-widest">
+                                    Approval required before appearing on the council page.
+                                </p>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
