@@ -9,10 +9,36 @@
    ✅ Technical "Root" Ledger Visual Style
    ========================================================= */
 
-session_start();
+require_once __DIR__ . '/../lib/helpers.php';
+require_once __DIR__ . '/../lib/auth.php';
+require_once __DIR__ . '/../config/db.php';
 
-// Mock behavior for Admin UI demonstration
-$adminError = isset($_GET['unauthorized']) ? "System Alert: Unauthorized access detected. IP Logged." : "";
+start_session();
+
+$adminError = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+
+    if ($email === '' || $password === '') {
+        $adminError = 'System Alert: Administrative credentials are required.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $adminError = 'System Alert: Provide a valid admin email address.';
+    } else {
+        $user = find_user_by_email($email);
+
+        if (!$user || !password_verify($password, $user['password_hash'])) {
+            $adminError = 'System Alert: Invalid administrative credentials.';
+        } elseif ($user['role'] !== 'admin' || $user['status'] !== 'active') {
+            $adminError = 'System Alert: Unauthorized access detected. IP Logged.';
+        } else {
+            login_user($user);
+            header('Location: dashboard.php');
+            exit;
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -265,15 +291,15 @@ $adminError = isset($_GET['unauthorized']) ? "System Alert: Unauthorized access 
             <?php if ($adminError): ?>
                 <div class="alert-banner reveal active">
                     <i class="fa-solid fa-triangle-exclamation mr-2"></i>
-                    <?= $adminError ?>
+                    <?= e($adminError) ?>
                 </div>
             <?php endif; ?>
 
-            <form action="dashboard.php" method="POST" class="space-y-8 reveal active">
+            <form action="login.php" method="POST" class="space-y-8 reveal active">
                 
                 <div class="space-y-2">
-                    <label class="tech-label">Admin Username / Email</label>
-                    <input type="text" name="admin_id" class="tech-input" placeholder="Enter Administrative ID" required autofocus>
+                    <label class="tech-label">Admin Email</label>
+                    <input type="email" name="email" class="tech-input" placeholder="Enter admin email" required autofocus>
                 </div>
 
                 <div class="space-y-2">
@@ -281,7 +307,7 @@ $adminError = isset($_GET['unauthorized']) ? "System Alert: Unauthorized access 
                         <label class="tech-label">Security Passcode</label>
                         <a href="#" class="text-[7px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-all">Emergency Reset</a>
                     </div>
-                    <input type="password" name="admin_pass" class="tech-input" placeholder="••••••••" required>
+                    <input type="password" name="password" class="tech-input" placeholder="••••••••" required>
                 </div>
 
                 <div class="pt-6">

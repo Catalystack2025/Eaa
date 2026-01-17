@@ -5,15 +5,30 @@ CREATE TABLE users (
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('admin', 'member', 'vendor') NOT NULL DEFAULT 'member',
   status ENUM('pending', 'active', 'rejected') NOT NULL DEFAULT 'pending',
+  email_verified_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_users_role (role),
   INDEX idx_users_status (status)
+);
+
+CREATE TABLE email_verifications (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  token CHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_email_verifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_email_verifications_user (user_id),
+  INDEX idx_email_verifications_expires (expires_at)
 );
 
 CREATE TABLE member_profile (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id INT UNSIGNED NOT NULL UNIQUE,
   phone VARCHAR(40) NOT NULL,
+  membership_category VARCHAR(40) NOT NULL DEFAULT 'licensed',
+  coa_number VARCHAR(60) DEFAULT NULL,
+  organization_name VARCHAR(160) DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_member_profile_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -24,11 +39,32 @@ CREATE TABLE vendor_profile (
   company_name VARCHAR(160) NOT NULL,
   contact_name VARCHAR(120) NOT NULL,
   phone VARCHAR(40) NOT NULL,
+  material_category VARCHAR(120) DEFAULT NULL,
+  description TEXT DEFAULT NULL,
   address VARCHAR(255) DEFAULT NULL,
   website VARCHAR(255) DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_vendor_profile_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_vendor_company (company_name)
+);
+
+CREATE TABLE vendor_products (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  vendor_id INT UNSIGNED NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  category VARCHAR(120) NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  unit VARCHAR(40) NOT NULL DEFAULT 'SQFT',
+  location VARCHAR(160) DEFAULT NULL,
+  image_url VARCHAR(255) DEFAULT NULL,
+  status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_vendor_products_vendor FOREIGN KEY (vendor_id) REFERENCES vendor_profile(id) ON DELETE CASCADE,
+  INDEX idx_vendor_products_vendor (vendor_id),
+  INDEX idx_vendor_products_category (category),
+  INDEX idx_vendor_products_location (location),
+  INDEX idx_vendor_products_price (price),
+  INDEX idx_vendor_products_status (status)
 );
 
 CREATE TABLE blogs (
