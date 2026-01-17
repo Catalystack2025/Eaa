@@ -4,7 +4,11 @@
    ✅ Updated to use common partials
    ========================================================= */
 
-session_start();
+require_once __DIR__ . '/../lib/helpers.php';
+
+start_session();
+$flashSuccess = flash_get('success');
+$flashError = flash_get('error');
 
 // Mock Admin Data
 $admin = [
@@ -28,6 +32,21 @@ $pageTitle = 'Admin Console | EAA Root';
 // LOAD HEADER & SIDEBAR
 require_once 'partials/header.php';
 ?>
+
+<?php if ($flashSuccess || $flashError): ?>
+    <div class="mb-8">
+        <?php if ($flashSuccess): ?>
+            <div class="px-6 py-4 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[9px] font-black uppercase tracking-widest eaa-radius">
+                <?= e($flashSuccess) ?>
+            </div>
+        <?php endif; ?>
+        <?php if ($flashError): ?>
+            <div class="mt-3 px-6 py-4 bg-red-50 border border-red-200 text-red-700 text-[9px] font-black uppercase tracking-widest eaa-radius">
+                <?= e($flashError) ?>
+            </div>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
 
 <!-- ADMIN METRICS GRID (Total Overview) -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
@@ -84,7 +103,12 @@ require_once 'partials/header.php';
                     </div>
                     <div class="flex gap-2">
                         <button class="px-4 py-2 border border-slate-200 text-[8px] font-black uppercase tracking-widest eaa-radius hover:bg-white transition-all">Review</button>
-                        <button class="px-4 py-2 bg-slate-900 text-white text-[8px] font-black uppercase tracking-widest eaa-radius shadow-lg transition-all">Verify</button>
+                        <form method="post" action="activate_member.php">
+                            <input type="hidden" name="email" value="member<?= $i ?>@eaa.org">
+                            <input type="hidden" name="name" value="Ar. Vijay Prasath">
+                            <input type="hidden" name="membership_id" value="EAA-MEM-2026-10<?= $i ?>">
+                            <button type="submit" class="px-4 py-2 bg-slate-900 text-white text-[8px] font-black uppercase tracking-widest eaa-radius shadow-lg transition-all">Verify</button>
+                        </form>
                     </div>
                 </div>
                 <?php endfor; ?>
