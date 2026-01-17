@@ -251,6 +251,12 @@ require_once 'partials/header.php';
         </div>
     </div>
 
+    <?php if ($statusMessage): ?>
+        <div class="mb-8 bg-white border border-slate-200 eaa-radius px-6 py-4 text-[9px] font-black uppercase tracking-widest text-slate-600">
+            <?= e($statusMessage) ?>
+        </div>
+    <?php endif; ?>
+
     <!-- FILTERING BAR -->
     <form method="get" class="p-4 bg-white border border-slate-100 eaa-radius flex flex-col lg:flex-row gap-4 justify-between items-center shadow-sm">
         <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">

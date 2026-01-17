@@ -4,15 +4,17 @@ VALUES
   ('Member User', 'member@eaa.local', '$2y$10$Z5qCydHFIr.54C8Xg3h5jOmVkK.DRjwfo/gPuwvk0yjDg8V4Qxk2m', 'member', 'active'),
   ('Vendor User', 'vendor@eaa.local', '$2y$10$Z5qCydHFIr.54C8Xg3h5jOmVkK.DRjwfo/gPuwvk0yjDg8V4Qxk2m', 'vendor', 'active');
 
-INSERT INTO member_profile (user_id, phone)
-VALUES ((SELECT id FROM users WHERE email = 'member@eaa.local'), '+91 90000 00000');
+INSERT INTO member_profile (user_id, phone, membership_category, coa_number, organization_name)
+VALUES ((SELECT id FROM users WHERE email = 'member@eaa.local'), '+91 90000 00000', 'licensed', 'CA/2012/55432', 'EAA Studio');
 
-INSERT INTO vendor_profile (user_id, company_name, contact_name, phone, address, website)
+INSERT INTO vendor_profile (user_id, company_name, contact_name, phone, material_category, description, address, website)
 VALUES (
   (SELECT id FROM users WHERE email = 'vendor@eaa.local'),
   'EAA Partner Studio',
   'Vendor Contact',
   '+91 98765 43210',
+  'Glass & Glazing',
+  'Preferred partner for glazing solutions.',
   '123 Vendor Lane, Erode',
   'https://vendor.example.com'
 );
