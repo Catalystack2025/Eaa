@@ -8,6 +8,8 @@
    ✅ Standardized 5px Radius & Smoke Grey Palette
    ========================================================= */
 
+declare(strict_types=1);
+
 require_once __DIR__ . '/../lib/helpers.php';
 require_once __DIR__ . '/../config/db.php';
 
@@ -15,44 +17,138 @@ start_session();
 
 $pageTitle = 'Vendor Directory | EAA Root';
 
-$statusMessage = null;
+$allowedStatuses = ['pending', 'active', 'rejected'];
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!csrf_verify($_POST['csrf_token'] ?? '')) {
-        $statusMessage = 'Session expired. Please try again.';
-    } else {
-        $userId = (int) ($_POST['user_id'] ?? 0);
-        $status = $_POST['status'] ?? '';
-        $allowedStatuses = ['active', 'rejected', 'pending'];
+function column_exists(string $table, string $column): bool
+{
+    $stmt = db()->prepare(
+        'SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = :table
+           AND COLUMN_NAME = :column'
+    );
+    $stmt->execute([
+        'table' => $table,
+        'column' => $column,
+    ]);
 
-        if ($userId > 0 && in_array($status, $allowedStatuses, true)) {
-            $stmt = db()->prepare('UPDATE users SET status = :status WHERE id = :id AND role = :role');
-            $stmt->execute([
-                'status' => $status,
-                'id' => $userId,
-                'role' => 'vendor',
-            ]);
-            $statusMessage = 'Vendor status updated.';
-        } else {
-            $statusMessage = 'Invalid status update request.';
-        }
-    }
+    return (int) $stmt->fetchColumn() > 0;
 }
 
-$vendors = db()->query(
-    'SELECT users.id, users.full_name, users.email, users.status, users.created_at, users.email_verified_at,
-            vendor_profile.company_name, vendor_profile.contact_name, vendor_profile.phone,
-            vendor_profile.material_category
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+    $userId = (int) ($_POST['user_id'] ?? 0);
+    $statusMap = [
+        'approve' => 'active',
+        'reject' => 'rejected',
+    ];
+
+    if ($userId > 0 && isset($statusMap[$action]) && csrf_verify($_POST['csrf_token'] ?? null)) {
+        $stmt = db()->prepare('UPDATE users SET status = :status WHERE id = :id AND role = :role');
+        $stmt->execute([
+            'status' => $statusMap[$action],
+            'id' => $userId,
+            'role' => 'vendor',
+        ]);
+    }
+
+    $redirect = basename(__FILE__);
+    if (!empty($_SERVER['QUERY_STRING'])) {
+        $redirect .= '?' . $_SERVER['QUERY_STRING'];
+    }
+
+    header('Location: ' . $redirect);
+    exit;
+}
+
+$status = $_GET['status'] ?? '';
+$category = $_GET['category'] ?? '';
+$search = trim($_GET['search'] ?? '');
+$page = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = 10;
+
+$categoryColumn = column_exists('vendor_profile', 'category') ? 'vendor_profile.category' : null;
+$filters = ['users.role = :role'];
+$params = ['role' => 'vendor'];
+
+if (in_array($status, $allowedStatuses, true)) {
+    $filters[] = 'users.status = :status';
+    $params['status'] = $status;
+}
+
+if ($categoryColumn && $category !== '') {
+    $filters[] = $categoryColumn . ' = :category';
+    $params['category'] = $category;
+}
+
+if ($search !== '') {
+    $filters[] = '(vendor_profile.company_name LIKE :search OR vendor_profile.contact_name LIKE :search OR vendor_profile.phone LIKE :search OR users.email LIKE :search)';
+    $params['search'] = '%' . $search . '%';
+}
+
+$whereClause = $filters ? ('WHERE ' . implode(' AND ', $filters)) : '';
+
+$pendingFilters = $filters;
+$pendingParams = $params;
+if (!in_array($status, $allowedStatuses, true)) {
+    $pendingFilters[] = 'users.status = :pending_status';
+    $pendingParams['pending_status'] = 'pending';
+} else {
+    $pendingFilters = array_filter($pendingFilters, static fn($filter) => $filter !== 'users.status = :status');
+    $pendingParams = array_filter($pendingParams, static fn($key) => $key !== 'status', ARRAY_FILTER_USE_KEY);
+    $pendingFilters[] = 'users.status = :pending_status';
+    $pendingParams['pending_status'] = 'pending';
+}
+
+$pendingWhereClause = $pendingFilters ? ('WHERE ' . implode(' AND ', $pendingFilters)) : '';
+
+$pendingStmt = db()->prepare(
+    'SELECT COUNT(*)
      FROM users
      JOIN vendor_profile ON vendor_profile.user_id = users.id
-     WHERE users.role = "vendor"
-     ORDER BY users.created_at DESC'
-)->fetchAll();
+     ' . $pendingWhereClause
+);
+$pendingStmt->execute($pendingParams);
+$pendingCount = (int) $pendingStmt->fetchColumn();
 
-$counts = ['active' => 0, 'pending' => 0, 'rejected' => 0];
-$countStmt = db()->query('SELECT status, COUNT(*) as total FROM users WHERE role = "vendor" GROUP BY status');
-foreach ($countStmt->fetchAll() as $row) {
-    $counts[$row['status']] = (int) $row['total'];
+$countStmt = db()->prepare(
+    'SELECT COUNT(*)
+     FROM users
+     JOIN vendor_profile ON vendor_profile.user_id = users.id
+     ' . $whereClause
+);
+$countStmt->execute($params);
+$totalVendors = (int) $countStmt->fetchColumn();
+$totalPages = max(1, (int) ceil($totalVendors / $perPage));
+$page = min($page, $totalPages);
+$offset = ($page - 1) * $perPage;
+
+$categorySelect = $categoryColumn ? ($categoryColumn . ' AS category') : "'Vendor' AS category";
+
+$query =
+    'SELECT users.id, users.full_name, users.email, users.status, users.created_at,
+            vendor_profile.id AS vendor_id, vendor_profile.company_name, vendor_profile.contact_name,
+            vendor_profile.phone, vendor_profile.website,
+            ' . $categorySelect . '
+     FROM users
+     JOIN vendor_profile ON vendor_profile.user_id = users.id
+     ' . $whereClause . '
+     ORDER BY users.created_at DESC
+     LIMIT :limit OFFSET :offset';
+
+$stmt = db()->prepare($query);
+foreach ($params as $key => $value) {
+    $stmt->bindValue(':' . $key, $value);
+}
+$stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
+$vendors = $stmt->fetchAll();
+
+function build_query(array $overrides = []): string
+{
+    return http_build_query(array_merge($_GET, $overrides));
 }
 
 require_once 'partials/header.php';
@@ -127,7 +223,7 @@ require_once 'partials/header.php';
         letter-spacing: 0.1em;
         border: 1px solid #e2e8f0;
     }
-    
+
     .marquee-status.active {
         background: #eff6ff;
         color: #2563eb;
@@ -145,11 +241,11 @@ require_once 'partials/header.php';
         <div class="flex gap-4">
             <div class="px-8 py-4 bg-white border border-slate-200 eaa-radius flex flex-col justify-center shadow-sm">
                 <span class="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Marquee</span>
-                <span class="text-xl font-black text-blue-600"><?= $counts['active'] ?></span>
+                <span class="text-xl font-black text-blue-600"><?= $totalVendors ?></span>
             </div>
             <div class="px-8 py-4 bg-white border border-slate-200 eaa-radius flex flex-col justify-center shadow-sm">
                 <span class="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Awaiting Audit</span>
-                <span class="text-xl font-black text-amber-600"><?= $counts['pending'] ?></span>
+                <span class="text-xl font-black text-amber-600"><?= $pendingCount ?></span>
             </div>
             <button class="px-10 py-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest eaa-radius shadow-2xl hover:bg-slate-700 transition-all">+ Register Vendor</button>
         </div>
@@ -162,21 +258,33 @@ require_once 'partials/header.php';
     <?php endif; ?>
 
     <!-- FILTERING BAR -->
-    <div class="p-4 bg-white border border-slate-100 eaa-radius flex flex-col lg:flex-row gap-4 justify-between items-center shadow-sm">
-        <div class="flex items-center gap-1 overflow-x-auto no-scrollbar w-full lg:w-auto">
-            <button class="px-6 py-2.5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius">All Vendors</button>
-            <button class="px-6 py-2.5 text-slate-400 hover:text-slate-900 text-[9px] font-black uppercase tracking-widest transition-all">Glass</button>
-            <button class="px-6 py-2.5 text-slate-400 hover:text-slate-900 text-[9px] font-black uppercase tracking-widest transition-all">Steel</button>
-            <button class="px-6 py-2.5 text-slate-400 hover:text-slate-900 text-[9px] font-black uppercase tracking-widest transition-all">Flooring</button>
-            <div class="w-px h-4 bg-slate-100 mx-2"></div>
-            <button class="px-6 py-2.5 text-blue-600 font-black text-[9px] uppercase tracking-widest">Marquee Only</button>
+    <form method="get" class="p-4 bg-white border border-slate-100 eaa-radius flex flex-col lg:flex-row gap-4 justify-between items-center shadow-sm">
+        <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+            <div class="flex items-center gap-2">
+                <label class="text-[8px] font-black uppercase tracking-[0.3em] text-slate-400">Status</label>
+                <select name="status" class="bg-slate-50 border border-slate-100 eaa-radius px-4 py-2 text-[9px] font-bold uppercase tracking-widest">
+                    <option value="">All</option>
+                    <?php foreach ($allowedStatuses as $option): ?>
+                        <option value="<?= e($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= e($option) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="text-[8px] font-black uppercase tracking-[0.3em] text-slate-400">Category</label>
+                <input type="text" name="category" value="<?= e($category) ?>" placeholder="e.g. Glass" class="bg-slate-50 border border-slate-100 eaa-radius px-4 py-2 text-[9px] font-bold uppercase tracking-widest">
+            </div>
         </div>
-        
+
         <div class="relative w-full lg:w-96">
-            <input type="text" placeholder="FILTER BY COMPANY, CATEGORY, OR REF_ID..." class="w-full bg-slate-50 border border-slate-100 eaa-radius px-6 py-3.5 text-[9px] font-bold uppercase tracking-widest outline-none focus:border-slate-400 transition-all">
+            <input type="text" name="search" value="<?= e($search) ?>" placeholder="FILTER BY COMPANY, CONTACT, OR EMAIL..." class="w-full bg-slate-50 border border-slate-100 eaa-radius px-6 py-3.5 text-[9px] font-bold uppercase tracking-widest outline-none focus:border-slate-400 transition-all">
             <i class="fa-solid fa-magnifying-glass absolute right-6 top-1/2 -translate-y-1/2 text-slate-300 text-[10px]"></i>
         </div>
-    </div>
+
+        <div class="flex gap-2">
+            <button type="submit" class="px-6 py-3 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius">Apply</button>
+            <a href="<?= e(basename(__FILE__)) ?>" class="px-6 py-3 text-slate-500 text-[9px] font-black uppercase tracking-widest">Reset</a>
+        </div>
+    </form>
 </div>
 
 <!-- REDESIGNED VENDOR LEDGER TABLE -->
@@ -194,78 +302,117 @@ require_once 'partials/header.php';
                 </tr>
             </thead>
             <tbody>
-                <?php foreach($vendors as $v): ?>
-                <tr>
-                    <td>
-                        <div class="flex flex-col">
-                            <span class="text-[12px] font-black text-slate-900 uppercase tracking-tight mb-1"><?= e($v['company_name']) ?></span>
-                            <div class="flex items-center gap-2">
-                                <span class="text-[8px] font-bold text-slate-400 uppercase tracking-[0.1em]">EAA-VND-<?= str_pad((string) $v['id'], 3, '0', STR_PAD_LEFT) ?></span>
+                <?php if (empty($vendors)): ?>
+                    <tr>
+                        <td colspan="6" class="text-center text-[10px] font-bold uppercase tracking-widest text-slate-400 py-10">
+                            No vendors found for the selected filters.
+                        </td>
+                    </tr>
+                <?php endif; ?>
+                <?php foreach ($vendors as $vendor): ?>
+                    <?php
+                    $statusClass = 'bg-slate-100 text-slate-500';
+                    if ($vendor['status'] === 'active') {
+                        $statusClass = 'bg-green-50 text-green-600 border-green-100';
+                    }
+                    if ($vendor['status'] === 'pending') {
+                        $statusClass = 'bg-amber-50 text-amber-600 border-amber-100';
+                    }
+                    if ($vendor['status'] === 'rejected') {
+                        $statusClass = 'bg-red-50 text-red-600 border-red-100';
+                    }
+                    $marqueeStatus = $vendor['status'] === 'active' ? 'Active' : 'Inactive';
+                    $joined = $vendor['created_at'] ? date('d M Y', strtotime($vendor['created_at'])) : '—';
+                    ?>
+                    <tr>
+                        <td>
+                            <div class="flex flex-col">
+                                <span class="text-[12px] font-black text-slate-900 uppercase tracking-tight mb-1"><?= e($vendor['company_name']) ?></span>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[8px] font-bold text-slate-400 uppercase tracking-[0.1em]">EAA-VND-<?= e((string) $vendor['vendor_id']) ?></span>
+                                </div>
                             </div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded bg-slate-50 flex items-center justify-center text-slate-300 border border-slate-100">
-                                <i class="fa-solid fa-layer-group text-[10px]"></i>
+                        </td>
+                        <td>
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded bg-slate-50 flex items-center justify-center text-slate-300 border border-slate-100">
+                                    <i class="fa-solid fa-layer-group text-[10px]"></i>
+                                </div>
+                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest"><?= e($vendor['category']) ?></span>
                             </div>
-                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest"><?= e($v['material_category'] ?: 'General') ?></span>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="flex flex-col">
-                            <span class="text-[10px] font-black text-slate-600 lowercase tracking-widest"><?= e($v['email']) ?></span>
-                            <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest"><?= e($v['contact_name']) ?> • <?= e($v['phone']) ?></span>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="inline-flex">
-                            <span class="marquee-status <?= $v['email_verified_at'] ? 'active' : '' ?>">
-                                <?= $v['email_verified_at'] ? 'Verified' : 'Unverified' ?>
+                        </td>
+                        <td>
+                            <div class="flex flex-col">
+                                <span class="text-[10px] font-black text-slate-600 uppercase tracking-widest"><?= e($vendor['contact_name']) ?></span>
+                                <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest"><?= e($vendor['email']) ?></span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="inline-flex flex-col gap-1">
+                                <span class="marquee-status <?= $marqueeStatus === 'Active' ? 'active' : '' ?>"><?= e($marqueeStatus) ?></span>
+                                <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest"><?= e($joined) ?></span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="px-3 py-1 text-[7px] font-black uppercase tracking-widest rounded border <?= $statusClass ?>">
+                                <?= e($vendor['status']) ?>
                             </span>
-                        </div>
-                    </td>
-                    <td>
-                        <?php 
-                        $statusClass = 'bg-slate-100 text-slate-500';
-                        if($v['status'] === 'active') $statusClass = 'bg-green-50 text-green-600 border-green-100';
-                        if($v['status'] === 'pending') $statusClass = 'bg-amber-50 text-amber-600 border-amber-100';
-                        if($v['status'] === 'rejected') $statusClass = 'bg-red-50 text-red-600 border-red-100';
-                        ?>
-                        <span class="px-3 py-1 text-[7px] font-black uppercase tracking-widest rounded border <?= $statusClass ?>">
-                            <?= e($v['status']) ?>
-                        </span>
-                    </td>
-                    <td>
-                        <form method="post" class="flex justify-end gap-2">
-                            <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                            <input type="hidden" name="user_id" value="<?= e((string) $v['id']) ?>">
-                            <button class="action-node hover:!bg-emerald-500 hover:!border-emerald-500" name="status" value="active" title="Activate Vendor">
-                                <i class="fa-solid fa-check text-[11px]"></i>
-                            </button>
-                            <button class="action-node hover:!bg-red-500 hover:!border-red-500" name="status" value="rejected" title="Reject Vendor">
-                                <i class="fa-solid fa-ban text-[11px]"></i>
-                            </button>
-                        </form>
-                    </td>
-                </tr>
+                        </td>
+                        <td>
+                            <div class="flex justify-end gap-2">
+                                <?php if ($vendor['status'] !== 'active'): ?>
+                                    <form method="post">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="user_id" value="<?= e((string) $vendor['id']) ?>">
+                                        <input type="hidden" name="action" value="approve">
+                                        <button class="action-node hover:!text-green-600" title="Approve Vendor">
+                                            <i class="fa-solid fa-check text-[11px]"></i>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                                <?php if ($vendor['status'] !== 'rejected'): ?>
+                                    <form method="post">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="user_id" value="<?= e((string) $vendor['id']) ?>">
+                                        <input type="hidden" name="action" value="reject">
+                                        <button class="action-node hover:!bg-red-500 hover:!border-red-500" title="Reject Vendor">
+                                            <i class="fa-solid fa-xmark text-[11px]"></i>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                    </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
     </div>
-    
+
     <!-- Table Footer / Pagination -->
     <div class="px-8 py-6 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
-        <span class="text-[8px] font-black uppercase tracking-widest text-slate-400 italic">Chronicle Node: Accessing Page 01 // Total <?= count($vendors) ?> Vendors Loaded</span>
+        <span class="text-[8px] font-black uppercase tracking-widest text-slate-400 italic">Chronicle Node: Accessing Page <?= e((string) $page) ?> // Total <?= e((string) $totalVendors) ?> Vendors</span>
         <div class="flex gap-2">
-            <button class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-slate-300 hover:border-slate-400 transition-all"><i class="fa-solid fa-chevron-left text-[10px]"></i></button>
-            <button class="w-9 h-9 flex items-center justify-center bg-slate-900 text-white eaa-radius text-[10px] font-black shadow-lg shadow-slate-200">1</button>
-            <button class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-[10px] font-black text-slate-400 hover:border-slate-400 transition-all">2</button>
-            <button class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-slate-400 hover:border-slate-400 transition-all"><i class="fa-solid fa-chevron-right text-[10px]"></i></button>
+            <?php
+            $prevPage = max(1, $page - 1);
+            $nextPage = min($totalPages, $page + 1);
+            ?>
+            <a href="?<?= e(build_query(['page' => $prevPage])) ?>" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-slate-300 hover:border-slate-400 transition-all">
+                <i class="fa-solid fa-chevron-left text-[10px]"></i>
+            </a>
+            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                <?php if ($i === $page): ?>
+                    <span class="w-9 h-9 flex items-center justify-center bg-slate-900 text-white eaa-radius text-[10px] font-black shadow-lg shadow-slate-200"><?= $i ?></span>
+                <?php else: ?>
+                    <a href="?<?= e(build_query(['page' => $i])) ?>" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-[10px] font-black text-slate-400 hover:border-slate-400 transition-all"><?= $i ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+            <a href="?<?= e(build_query(['page' => $nextPage])) ?>" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 eaa-radius text-slate-300 hover:border-slate-400 transition-all">
+                <i class="fa-solid fa-chevron-right text-[10px]"></i>
+            </a>
         </div>
     </div>
 </div>
 
-<?php 
-require_once 'partials/footer.php'; 
+<?php
+require_once 'partials/footer.php';
 ?>
