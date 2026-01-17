@@ -297,7 +297,7 @@ require_once __DIR__ . "/partials/header.php";
                 <div class="space-y-2">
                     <div class="flex justify-between items-center">
                         <label class="tech-label">Passcode</label>
-                        <a href="forgot.php" class="text-[8px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors">Forgot Password?</a>
+                        <a href="password_reset_request.php" class="text-[8px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors">Forgot Password?</a>
                     </div>
                     <input type="password" name="password" class="tech-input" placeholder="••••••••" required>
                 </div>
