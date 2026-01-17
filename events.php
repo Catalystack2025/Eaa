@@ -376,7 +376,11 @@ foreach ($eventRows as $index => $eventRow) {
             <p id="modalDesc" class="text-xs text-slate-500 leading-loose mb-10 text-justify uppercase tracking-widest font-semibold"></p>
             
             <div class="grid grid-cols-2 gap-4 pt-10 border-t border-slate-50">
-                <div id="modalRegisterAction"></div>
+                <?php if ($isLoggedIn): ?>
+                    <a href="events.php?success=1" class="px-6 py-5 bg-slate-900 text-white text-center text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-xl">Register to Attend</a>
+                <?php else: ?>
+                    <a href="login.php" class="px-6 py-5 border border-slate-200 text-center text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-50 transition-all">Sign in to Register</a>
+                <?php endif; ?>
                 <button class="px-6 py-5 border border-slate-200 text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-50 transition-all">Download Info</button>
             </div>
         </div>

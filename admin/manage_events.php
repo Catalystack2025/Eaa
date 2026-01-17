@@ -135,6 +135,21 @@ $flashError = flash_get('event_error');
 require_once 'partials/header.php';
 ?>
 
+<?php if ($flashSuccess || $flashError): ?>
+    <div class="mb-8">
+        <?php if ($flashSuccess): ?>
+            <div class="px-6 py-4 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[9px] font-black uppercase tracking-widest eaa-radius">
+                <?= e($flashSuccess) ?>
+            </div>
+        <?php endif; ?>
+        <?php if ($flashError): ?>
+            <div class="mt-3 px-6 py-4 bg-red-50 border border-red-200 text-red-700 text-[9px] font-black uppercase tracking-widest eaa-radius">
+                <?= e($flashError) ?>
+            </div>
+        <?php endif; ?>
+    </div>
+<?php endif; ?>
+
 <style>
     .ledger-table-container {
         background: #ffffff;
@@ -368,14 +383,16 @@ require_once 'partials/header.php';
                     </td>
                     <td>
                         <div class="flex justify-end gap-2">
-                            <button class="action-node" title="Attendee List" disabled><i class="fa-solid fa-list-check text-[11px]"></i></button>
-                            <a class="action-node" href="manage_events.php?edit_id=<?= (int) $e['id'] ?>" title="Modify Node"><i class="fa-solid fa-pen-nib text-[11px]"></i></a>
-                            <form method="post" onsubmit="return confirm('Delete this event?');">
-                                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="event_id" value="<?= (int) $e['id'] ?>">
-                                <button class="action-node hover:!bg-red-500 hover:!border-red-500" title="Delete Entry"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
+                            <form method="post" action="send_event_reminder.php">
+                                <input type="hidden" name="email" value="member@eaa.org">
+                                <input type="hidden" name="name" value="EAA Member">
+                                <input type="hidden" name="event_title" value="<?= e($e['title']) ?>">
+                                <input type="hidden" name="event_date" value="<?= e($e['date']) ?> <?= e($e['time']) ?>">
+                                <input type="hidden" name="event_location" value="<?= e($e['loc']) ?>">
+                                <button type="submit" class="action-node" title="Send Reminder"><i class="fa-solid fa-list-check text-[11px]"></i></button>
                             </form>
+                            <button class="action-node" title="Modify Node"><i class="fa-solid fa-pen-nib text-[11px]"></i></button>
+                            <button class="action-node hover:!bg-red-500 hover:!border-red-500" title="Delete Entry"><i class="fa-solid fa-trash-can text-[11px]"></i></button>
                         </div>
                     </td>
                 </tr>
