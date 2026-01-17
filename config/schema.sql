@@ -31,6 +31,25 @@ CREATE TABLE vendor_profile (
   INDEX idx_vendor_company (company_name)
 );
 
+CREATE TABLE vendor_products (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  vendor_id INT UNSIGNED NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  category VARCHAR(120) NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  unit VARCHAR(40) NOT NULL DEFAULT 'SQFT',
+  location VARCHAR(160) DEFAULT NULL,
+  image_url VARCHAR(255) DEFAULT NULL,
+  status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_vendor_products_vendor FOREIGN KEY (vendor_id) REFERENCES vendor_profile(id) ON DELETE CASCADE,
+  INDEX idx_vendor_products_vendor (vendor_id),
+  INDEX idx_vendor_products_category (category),
+  INDEX idx_vendor_products_location (location),
+  INDEX idx_vendor_products_price (price),
+  INDEX idx_vendor_products_status (status)
+);
+
 CREATE TABLE blogs (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   author_id INT UNSIGNED NOT NULL,
