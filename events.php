@@ -10,49 +10,94 @@
    ========================================================= */
 
 require_once __DIR__ . '/lib/helpers.php';
+require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/config/db.php';
 
 start_session();
 
 $isLoggedIn = isset($_SESSION['user_id']);
+$userId = $isLoggedIn ? (int) $_SESSION['user_id'] : null;
 $pageTitle = 'Event Schedule | Erode Architect Association';
 
-// Handle registration feedback logic (Mock for UI)
-$registerSuccess = isset($_GET['success']);
-$registerError = isset($_GET['error']) ? "Registration failed. Please try again." : "";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'register') {
+    if (!csrf_verify($_POST['csrf_token'] ?? null)) {
+        flash_set('event_error', 'Security verification failed. Please try again.');
+        redirect('events.php');
+    }
+
+    if (!$isLoggedIn) {
+        flash_set('event_error', 'Please log in to register for events.');
+        redirect('events.php');
+    }
+
+    $eventId = (int) ($_POST['event_id'] ?? 0);
+    $stmt = db()->prepare('SELECT id, title FROM events WHERE id = :id AND is_public = 1');
+    $stmt->execute(['id' => $eventId]);
+    $event = $stmt->fetch();
+
+    if (!$event) {
+        flash_set('event_error', 'Selected event is not available for registration.');
+        redirect('events.php');
+    }
+
+    $stmt = db()->prepare('SELECT 1 FROM event_registrations WHERE event_id = :event_id AND user_id = :user_id');
+    $stmt->execute(['event_id' => $eventId, 'user_id' => $userId]);
+    if ($stmt->fetchColumn()) {
+        flash_set('event_error', 'You are already registered for this event.');
+        redirect('events.php');
+    }
+
+    $stmt = db()->prepare('INSERT INTO event_registrations (event_id, user_id) VALUES (:event_id, :user_id)');
+    $stmt->execute(['event_id' => $eventId, 'user_id' => $userId]);
+    flash_set('event_success', 'Registration confirmed for ' . $event['title'] . '.');
+    redirect('events.php');
+}
+
+$registerSuccess = flash_get('event_success');
+$registerError = flash_get('event_error');
 
 require_once __DIR__ . "/partials/header.php";
 
-// Mock Event Data
-$events = [
-    [
-        "id" => 101,
-        "title" => "Urban Planning Summit",
-        "start" => "2026-01-15T10:00:00",
-        "image" => "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=800",
-        "location" => "Convention Center",
-        "description" => "Exploring sustainable growth and urban infrastructure for the Erode region.",
-        "category" => "Technical"
-    ],
-    [
-        "id" => 102,
-        "title" => "Modernism Workshop",
-        "start" => "2026-01-22T14:30:00",
-        "image" => "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=800",
-        "location" => "Association HQ",
-        "description" => "A deep dive into minimalist functional living spaces and material honesty.",
-        "category" => "Workshop"
-    ],
-    [
-        "id" => 103,
-        "title" => "Interior Design Expo",
-        "start" => "2026-01-28T09:00:00",
-        "image" => "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=800",
-        "location" => "Expo Hall",
-        "description" => "Showcase of luxury interior products and avant-garde architectural materials.",
-        "category" => "Exhibition"
-    ]
+$stmt = db()->prepare(
+    'SELECT id, title, start_date, end_date, location, description
+     FROM events
+     WHERE is_public = 1
+     ORDER BY start_date ASC'
+);
+$stmt->execute();
+$eventRows = $stmt->fetchAll();
+
+$registeredEventIds = [];
+if ($isLoggedIn) {
+    $stmt = db()->prepare('SELECT event_id FROM event_registrations WHERE user_id = :user_id');
+    $stmt->execute(['user_id' => $userId]);
+    $registeredEventIds = array_map('intval', array_column($stmt->fetchAll(), 'event_id'));
+}
+
+$defaultImages = [
+    'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=800',
+    'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=800',
+    'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=800',
+    'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=800',
 ];
+
+$events = [];
+foreach ($eventRows as $index => $eventRow) {
+    $startDate = new DateTimeImmutable($eventRow['start_date']);
+    $endDate = new DateTimeImmutable($eventRow['end_date']);
+    $events[] = [
+        'id' => (int) $eventRow['id'],
+        'title' => $eventRow['title'],
+        'start' => $startDate->format('Y-m-d\T09:00:00'),
+        'end' => $endDate->format('Y-m-d\T17:00:00'),
+        'image' => $defaultImages[$index % count($defaultImages)],
+        'location' => $eventRow['location'] ?: 'TBD',
+        'description' => $eventRow['description'] ?: 'Event details will be shared soon.',
+        'is_registered' => in_array((int) $eventRow['id'], $registeredEventIds, true),
+        'date_label' => $startDate->format('M d, Y'),
+        'date_range' => $startDate->format('M d, Y') . ' - ' . $endDate->format('M d, Y'),
+    ];
+}
 ?>
 
 <style>
@@ -242,17 +287,15 @@ $events = [
                     <div class="w-2 h-2 bg-green-500 rounded-full"></div>
                     <div>
                         <div class="text-[10px] font-black uppercase tracking-widest text-green-700">Registration Success</div>
-                        <div class="text-[11px] font-bold text-green-900 mt-1 uppercase">
-                            <?= $isLoggedIn ? "Your attendance is confirmed." : "Your registration request is submitted." ?>
-                        </div>
+                        <div class="text-[11px] font-bold text-green-900 mt-1 uppercase"><?= e($registerSuccess) ?></div>
                     </div>
                 </div>
-            <?php elseif ($registerError !== ""): ?>
+            <?php elseif ($registerError): ?>
                 <div class="mt-10 p-6 bg-red-50 border border-red-100 eaa-radius flex items-center gap-4">
                     <div class="w-2 h-2 bg-red-500 rounded-full"></div>
                     <div>
                         <div class="text-[10px] font-black uppercase tracking-widest text-red-700">Action Required</div>
-                        <div class="text-[11px] font-bold text-red-900 mt-1 uppercase"><?= htmlspecialchars($registerError) ?></div>
+                        <div class="text-[11px] font-bold text-red-900 mt-1 uppercase"><?= e($registerError) ?></div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -283,27 +326,32 @@ $events = [
                 <?php foreach($events as $index => $e): ?>
                 <div class="portrait-card eaa-radius reveal group cursor-pointer" onclick="openEventModal(<?= $index ?>)" style="transition-delay: <?= $index * 100 ?>ms;">
                     <div class="portrait-image">
-                        <img src="<?= $e['image'] ?>" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="<?= $e['title'] ?>">
+                        <img src="<?= e($e['image']) ?>" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="<?= e($e['title']) ?>">
                     </div>
                     <div class="p-8 flex-1 flex flex-col">
-                        <span class="tech-label"><?= date('M d, Y', strtotime($e['start'])) ?></span>
-                        <h4 class="font-bold text-sm text-slate-900 uppercase tracking-tight mb-4 group-hover:text-slate-500 transition-colors"><?= $e['title'] ?></h4>
+                        <span class="tech-label"><?= e($e['date_label']) ?></span>
+                        <h4 class="font-bold text-sm text-slate-900 uppercase tracking-tight mb-4 group-hover:text-slate-500 transition-colors"><?= e($e['title']) ?></h4>
                         
                         <div class="mt-auto pt-6 flex flex-col gap-4">
                             <div class="flex items-center justify-between border-t border-slate-50 pt-4">
-                                <span class="text-[8px] font-black text-slate-400 uppercase tracking-widest"><?= $e['location'] ?></span>
+                                <span class="text-[8px] font-black text-slate-400 uppercase tracking-widest"><?= e($e['location']) ?></span>
                                 <div class="w-6 h-6 rounded-full border border-slate-100 flex items-center justify-center group-hover:bg-slate-900 group-hover:text-white transition-all">
                                     <i class="fa-solid fa-arrow-right-long text-[8px]"></i>
                                 </div>
                             </div>
                             <?php if ($isLoggedIn): ?>
-                                <a href="events.php?success=1" class="block">
-                                    <span class="block w-full text-center py-3 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-lg shadow-slate-200">Register to Attend</span>
-                                </a>
+                                <?php if ($e['is_registered']): ?>
+                                    <button class="w-full py-3 bg-slate-200 text-slate-500 text-[9px] font-black uppercase tracking-widest eaa-radius cursor-not-allowed" disabled>Registered</button>
+                                <?php else: ?>
+                                    <form method="post">
+                                        <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                                        <input type="hidden" name="action" value="register">
+                                        <input type="hidden" name="event_id" value="<?= (int) $e['id'] ?>">
+                                        <button class="w-full py-3 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-lg shadow-slate-200">Register Now</button>
+                                    </form>
+                                <?php endif; ?>
                             <?php else: ?>
-                                <a href="login.php" class="block">
-                                    <span class="block w-full text-center py-3 border border-slate-200 text-slate-700 text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-50 transition-all">Sign in to Register</span>
-                                </a>
+                                <a href="login.php" class="w-full py-3 text-center bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-lg shadow-slate-200">Login to Register</a>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -346,6 +394,8 @@ $events = [
 
 <script>
     const EVENT_DATA = <?= json_encode($events) ?>;
+    const CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
+    const IS_LOGGED_IN = <?= json_encode($isLoggedIn) ?>;
 
     document.addEventListener('DOMContentLoaded', function() {
         const calendarEl = document.getElementById('calendar');
@@ -391,9 +441,27 @@ $events = [
     function openEventModal(index) {
         const e = EVENT_DATA[index];
         document.getElementById('modalTitle').innerText = e.title;
-        document.getElementById('modalDate').innerText = new Date(e.start).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        document.getElementById('modalDate').innerText = e.date_range;
         document.getElementById('modalDesc').innerText = e.description;
         document.getElementById('modalImage').src = e.image;
+
+        const registerTarget = document.getElementById('modalRegisterAction');
+        if (IS_LOGGED_IN) {
+            if (e.is_registered) {
+                registerTarget.innerHTML = `<button class="px-6 py-5 bg-slate-200 text-slate-500 text-[9px] font-black uppercase tracking-widest eaa-radius cursor-not-allowed" disabled>Registered</button>`;
+            } else {
+                registerTarget.innerHTML = `
+                    <form method="post">
+                        <input type="hidden" name="csrf_token" value="${CSRF_TOKEN}">
+                        <input type="hidden" name="action" value="register">
+                        <input type="hidden" name="event_id" value="${e.id}">
+                        <button class="px-6 py-5 bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-xl">Register Now</button>
+                    </form>
+                `;
+            }
+        } else {
+            registerTarget.innerHTML = `<a href="login.php" class="px-6 py-5 text-center bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest eaa-radius hover:bg-slate-700 transition-all shadow-xl">Login to Register</a>`;
+        }
         
         document.getElementById('eventModal').style.display = 'flex';
         document.body.style.overflow = 'hidden';
