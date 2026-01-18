@@ -128,24 +128,19 @@ CREATE TABLE event_registrations (
   UNIQUE KEY uq_event_user (event_id, user_id)
 );
 
-CREATE TABLE event_reminders (
+CREATE TABLE team_members (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  event_id INT UNSIGNED NOT NULL,
-  user_id INT UNSIGNED NOT NULL,
-  reminder_date DATE NOT NULL,
-  sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_event_rem_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
-  CONSTRAINT fk_event_rem_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  UNIQUE KEY uq_event_reminder (event_id, user_id, reminder_date)
-CREATE TABLE password_resets (
-  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  user_id INT UNSIGNED NOT NULL,
-  token VARCHAR(255) NOT NULL,
-  expires_at DATETIME NOT NULL,
-  used_at DATETIME DEFAULT NULL,
+  user_id INT UNSIGNED NOT NULL UNIQUE,
+  photo_path VARCHAR(255) DEFAULT NULL,
+  title VARCHAR(120) NOT NULL,
+  category VARCHAR(80) NOT NULL,
+  visible TINYINT(1) NOT NULL DEFAULT 0,
+  approved TINYINT(1) NOT NULL DEFAULT 0,
+  featured TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_password_resets_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  INDEX idx_password_resets_token (token),
-  INDEX idx_password_resets_user (user_id),
-  INDEX idx_password_resets_expires (expires_at)
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_team_members_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_team_members_visibility (visible, approved),
+  INDEX idx_team_members_category (category),
+  INDEX idx_team_members_featured (featured)
 );

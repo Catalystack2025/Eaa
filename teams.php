@@ -13,29 +13,15 @@ require_once __DIR__ . '/config/db.php';
 
 start_session();
 
-// Generating 20 dummy members for the layout
-$members = [
-    ['name' => 'Ar. Suresh Kumar', 'role' => 'Principal Architect', 'cat' => 'Principal', 'wa' => '919999999999', 'insta' => '#', 'email' => 'suresh@eaa.org'],
-    ['name' => 'Ar. Priya Sharma', 'role' => 'Principal Designer', 'cat' => 'Principal', 'wa' => '919999999999', 'insta' => '#', 'email' => 'priya@eaa.org'],
-    ['name' => 'Ar. Rajesh M.', 'role' => 'Senior Urbanist', 'cat' => 'Senior', 'wa' => '919999999999', 'insta' => '#', 'email' => 'rajesh@eaa.org'],
-    ['name' => 'Ar. Lakshmi N.', 'role' => 'Landscape Lead', 'cat' => 'Senior', 'wa' => '919999999999', 'insta' => '#', 'email' => 'lakshmi@eaa.org'],
-    ['name' => 'Ar. Vikram Singh', 'role' => 'Structural Specialist', 'cat' => 'Senior', 'wa' => '919999999999', 'insta' => '#', 'email' => 'vikram@eaa.org'],
-    ['name' => 'Ar. Ananya Rao', 'role' => 'Interior Lead', 'cat' => 'Senior', 'wa' => '919999999999', 'insta' => '#', 'email' => 'ananya@eaa.org'],
-    ['name' => 'Ar. Karthik S.', 'role' => 'BIM Manager', 'cat' => 'Senior', 'wa' => '919999999999', 'insta' => '#', 'email' => 'karthik@eaa.org'],
-    ['name' => 'Ar. Meera Reddy', 'role' => 'Project Lead', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'meera@eaa.org'],
-    ['name' => 'Ar. Arjun V.', 'role' => 'Junior Architect', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'arjun@eaa.org'],
-    ['name' => 'Ar. Sneha P.', 'role' => 'Design Coordinator', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'sneha@eaa.org'],
-    ['name' => 'Ar. Rohan G.', 'role' => 'Visualization Artist', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'rohan@eaa.org'],
-    ['name' => 'Ar. Kavita B.', 'role' => 'Site Supervisor', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'kavita@eaa.org'],
-    ['name' => 'Ar. Nitin K.', 'role' => 'Compliance Officer', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'nitin@eaa.org'],
-    ['name' => 'Ar. Divya T.', 'role' => 'Sustainable Design', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'divya@eaa.org'],
-    ['name' => 'Ar. Manoj L.', 'role' => 'Technical Drafter', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'manoj@eaa.org'],
-    ['name' => 'Ar. Pooja H.', 'role' => 'Research Intern', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'pooja@eaa.org'],
-    ['name' => 'Ar. Akash J.', 'role' => 'Junior Designer', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'akash@eaa.org'],
-    ['name' => 'Ar. Swati M.', 'role' => 'Conservationist', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'swati@eaa.org'],
-    ['name' => 'Ar. Rahul S.', 'role' => 'Planning Assistant', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'rahul@eaa.org'],
-    ['name' => 'Ar. Ishani F.', 'role' => 'Admin Lead', 'cat' => 'Associate', 'wa' => '919999999999', 'insta' => '#', 'email' => 'ishani@eaa.org'],
-];
+$stmt = db()->query(
+    'SELECT team_members.title, team_members.category, team_members.photo_path, team_members.featured,
+            users.full_name, users.email
+     FROM team_members
+     JOIN users ON users.id = team_members.user_id
+     WHERE team_members.visible = 1 AND team_members.approved = 1
+     ORDER BY team_members.featured DESC, team_members.category ASC, users.full_name ASC'
+);
+$members = $stmt->fetchAll();
 
 $pageTitle = 'Design Council | Erode Architect Association';
 require_once __DIR__ . "/partials/header.php";
@@ -253,30 +239,33 @@ require_once __DIR__ . "/partials/header.php";
 <section class="py-24 bg-white relative overflow-hidden">
     <div class="container mx-auto px-6 relative z-10">
         <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-8 lg:gap-6">
+            <?php if (empty($members)): ?>
+                <div class="col-span-full border border-dashed border-slate-200 eaa-radius p-10 text-center text-slate-400 uppercase tracking-widest text-[9px] font-black">
+                    Council profiles are being curated. Check back soon.
+                </div>
+            <?php endif; ?>
             <?php foreach($members as $index => $m): ?>
+                <?php
+                $photoUrl = $m['photo_path'] ? asset($m['photo_path']) : 'https://via.placeholder.com/600x800?text=EAA';
+                ?>
             <div class="team-card eaa-radius reveal" style="transition-delay: <?= ($index % 5) * 100 ?>ms;">
                 <div class="team-image-box">
-                    <!-- Standard Mock Image -->
-                    <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=600&auto=format&fit=crop" alt="<?= $m['name'] ?>">
+                    <img src="<?= e($photoUrl) ?>" alt="<?= e($m['full_name']) ?>">
                     
-                    <!-- Top Right Actions (Now supports auto-hover logic) -->
                     <div class="team-overlay">
-                        <a href="https://wa.me/<?= $m['wa'] ?>" target="_blank" class="social-icon-btn" title="WhatsApp">
-                            <i class="fa-brands fa-whatsapp"></i>
-                        </a>
-                        <a href="<?= $m['insta'] ?>" target="_blank" class="social-icon-btn" title="Instagram">
-                            <i class="fa-brands fa-instagram"></i>
-                        </a>
-                        <a href="mailto:<?= $m['email'] ?>" class="social-icon-btn" title="Email">
+                        <a href="mailto:<?= e($m['email']) ?>" class="social-icon-btn" title="Email">
                             <i class="fa-regular fa-envelope"></i>
                         </a>
                     </div>
 
-                    <div class="card-label label-tl"><?= $m['cat'] ?></div>
+                    <div class="card-label label-tl"><?= e($m['category']) ?></div>
+                    <?php if (!empty($m['featured'])): ?>
+                        <div class="card-label" style="bottom: 15px; left: 15px; background: #64748b;">Featured</div>
+                    <?php endif; ?>
                 </div>
                 <div class="team-info">
-                    <span class="team-role"><?= $m['role'] ?></span>
-                    <h3 class="team-name"><?= $m['name'] ?></h3>
+                    <span class="team-role"><?= e($m['title']) ?></span>
+                    <h3 class="team-name"><?= e($m['full_name']) ?></h3>
                     <div class="mt-6 flex items-center gap-3 opacity-10">
                         <div class="h-px flex-1 bg-slate-900"></div>
                         <span class="text-[6px] font-black uppercase">EAA-REF-0<?= sprintf('%02d', $index + 1) ?></span>
