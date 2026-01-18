@@ -51,8 +51,11 @@
     </nav>
 
     <div class="mt-auto">
-        <a href="../auth/logout.php" class="text-[9px] font-black uppercase tracking-widest text-red-400 hover:text-red-300 transition-colors flex items-center gap-3 px-4">
-            <i class="fa-solid fa-power-off"></i> Terminate Admin Session
-        </a>
+        <form action="../auth/logout.php" method="post" class="px-4">
+            <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+            <button type="submit" class="text-[9px] font-black uppercase tracking-widest text-red-400 hover:text-red-300 transition-colors flex items-center gap-3">
+                <i class="fa-solid fa-power-off"></i> Terminate Admin Session
+            </button>
+        </form>
     </div>
 </aside>
