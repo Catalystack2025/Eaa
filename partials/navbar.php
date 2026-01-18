@@ -148,6 +148,10 @@ if (!function_exists('is_active')) {
     <div class="mt-8 flex flex-col gap-3 w-full px-12">
         <?php if ($is_logged_in): ?>
             <a href="accountpage.php" class="w-full py-4 bg-slate-900 text-white text-center text-[10px] font-black uppercase tracking-widest eaa-radius shadow-lg">My Account</a>
+            <form action="/auth/logout.php" method="post" class="w-full">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <button type="submit" class="w-full py-4 border border-slate-200 text-slate-900 text-[10px] font-black uppercase tracking-widest eaa-radius">Log Out</button>
+            </form>
         <?php else: ?>
             <a href="login.php" class="w-full py-4 border border-slate-200 text-slate-900 text-center text-[10px] font-black uppercase tracking-widest eaa-radius">Sign In</a>
             <a href="join.php" class="w-full py-4 bg-slate-900 text-white text-center text-[10px] font-black uppercase tracking-widest eaa-radius shadow-lg">Join the Guild</a>
@@ -183,6 +187,10 @@ if (!function_exists('is_active')) {
             <div class="hidden lg:flex items-center gap-2 border-l border-slate-200 pl-4">
                 <?php if ($is_logged_in): ?>
                     <a href="accountpage.php" class="auth-button bg-slate-900 text-white px-5 py-2 text-[9px] font-black uppercase tracking-widest hover:bg-slate-900 shadow-sm transition-all">My Account</a>
+                    <form action="/auth/logout.php" method="post">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                        <button type="submit" class="auth-button border border-slate-200 px-4 py-2 text-[9px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50">Log Out</button>
+                    </form>
                 <?php else: ?>
                     <a href="login.php" class="auth-button border border-slate-200 px-4 py-2 text-[9px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50">Sign In</a>
                     <a href="join.php" class="auth-button bg-slate-800 text-white px-5 py-2 text-[9px] font-black uppercase tracking-widest hover:bg-slate-900 shadow-sm transition-all">Join Us</a>
